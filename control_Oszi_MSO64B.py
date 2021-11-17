@@ -8,7 +8,7 @@ OPEN_CMD = "TCPIP0::{}::INSTR"
 
 class Osci(object):
 
-	def __init__(self, ip, points = 125000000/2, datatype='h'):
+	def __init__(self, ip, points = 12500000/2, datatype='h'):
 		'''Initializes the Osci'''
 		self.ip = ip
 		self.rm = visa.ResourceManager('@py')
@@ -33,15 +33,22 @@ class Osci(object):
 		'''Easy way to read'''
 		return self.visa_if.read(command)
 
-	def messung(self,Number_of_SEQuence = 1000,AVERAGe_Number = 100):
+	def messung(self,Number_of_SEQuence = 1,AVERAGe_Number = 100):
 		'''Returns the Waveform shown on the Display time in s and Voltage in  '''
-		self.write('ACQuire:MODe AVERAGe;:ACQuire:NUMAVg {}'.format(AVERAGe_Number))
+		#self.write('ACQuire:MODe AVERAGe;:ACQuire:NUMAVg {}'.format(AVERAGe_Number))
 		self.write('DAT:STOP {}'.format(self.points))
+		self.write('HOR:MODE:RECO {}'.format(self.points))
+		self.write('DATa:WIDth 2')
 		self.write('ACQ:STATE STOP')
 		self.write('ACQ:SEQuence:NUMSEQuence {}'.format(Number_of_SEQuence))
+		self.write('ACQ:STOPAfter SEQ')
+		print(self.query('ACQ:STOPA?'))
 		self.write('CLEAR')
 		self.write('ACQ:STATE 1')
-		#print(self.query('ACQuire:NUMAVg?'))
+		while float(self.query('ACQ:NUMAC?').strip())<1:
+			time.sleep(.1)
+			#print('y')
+		print(self.query('ACQuire:NUMAVg?'))
 		time.sleep(1)
 		before = time.time()
 		y_values=self.query_binary_values('CURV?', datatype=self.datatype,container=np.array)
@@ -49,20 +56,34 @@ class Osci(object):
 		print('Measurement duration: ',  duration)
 		XDIV = float(self.query('HORizontal:MODE:SCA?'))
 		#print(XDIV)
-		YMU = float(self.query('WFMO:YMU?').strip())
-		x_values = np.linspace((-5)*XDIV,XDIV*5,len(y_values))
-		return (x_values, y_values*YMU)
 
-	def plot(self, Name = 'Messung'):
-		fig, ax = plt.subplots(figsize=(10,5))
+		YOFF = float(self.query('WFMOutpre:YOFf?'))
+		YMU = float(self.query('WFMO:YMU?').strip())
+		print(YMU)
+		print(YOFF)
+		x_values = np.linspace((-5)*XDIV,XDIV*5,len(y_values))
+		print((y_values-YOFF)*YMU)
+		return (x_values, (y_values-YOFF)*YMU)
+
+	def plot(self, Name = 'Messung.npy'):
+		#fig, ax = plt.subplots(figsize=(10,5))
 		x, y = self.messung()
-		ax.plot(x,y)
-		plt.show()
+		np.save(Name,(np.array([x,y]).T))
 		#plt.savefig('{}.pdf'.format(Name))
+
+	def __del__(self):
+		'''Deconstructor, alwalys call at the end, otherwise there might be bugs!'''
+		self.write('CLEAR')
+		self.visa_if.close()
+		self.rm.close()
+		print('Close')
 
 if __name__=='__main__':
 	os.system('sudo ifconfig enp4s5 192.168.2.51')
 	osci =  Osci('192.168.2.58')
 	#osci.write('ACQuire:MODe AVERAGe;:ACQuire:NUMAVg 100')
 	#time.sleep(2)
-	osci.plot()
+	osci.write('DISPLAY:WAVEV1:CH1:VERT:SCAL 0.1')
+	time.sleep(2)
+	#osci.plot()
+	del osci
