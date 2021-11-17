@@ -10,22 +10,45 @@ class Funk_Gen(object):
 
     def query(self, command):
         '''Easy way to query'''
-        return self.DG.query(command)
+	try:
+        	return self.DG.query(command)
+	except Exception:
+		print('Timeout Error: probably does the command {} not exist'.format(command))
+		return
 
     def write(self, command):
         '''Easy way to write'''
-        return self.DG.write(command)
-
+	try:
+        	return self.DG.write(command)
+	except Exception:
+		print('Timeout Error: probably does the command {} not exist'.format(command))
+		return
     def read(self, command):
         '''Easy way to read'''
-        return self.DG.read(command)
-
+	try:
+        	return self.DG.read(command)
+	except Exception:
+		print('Timeout Error: probably does the command {} not exist'.format(command))
+		return
     def sinus(self, freq=1000, ampl=1, off=0):
         self.write('APPLy:SINusoid {0},{1},{2}'.format(freq,ampl,off))
 
     def pulse(self, freq=1000, ampl=1, off=0, width = 'MINimum'):
-        self.write('APPLy:PULSe {0},{1},{2}'.format(freq,ampl,off))
-        self.write('PULSe:WIDTh {}'.format(width))
+	try:
+		freq = float(freq)
+		ampl = float(ampl)
+		off = float(off)
+	except ValueError:	
+		print('not a Valid input')
+	if width == "MINimum" or width == "MAXimum" or width == "MAX" or width == "MIN"":	
+        	self.write('APPLy:PULSe {0},{1},{2}'.format(freq,ampl,off))
+        	self.write('PULSe:WIDTh {}'.format(width))
+		return
+	else:
+		try:
+			width = float(width)
+		except ValueError:
+			print('{} is not a valid input'.format(width))
     #def __del__(self):
         #time.sleep(1)
         #self.write('SYSTem:LOCal')
