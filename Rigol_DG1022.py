@@ -1,3 +1,4 @@
+#Works for Rigol DG1022 developed for PMT measurements
 import pyvisa as visa
 import numpy as np
 import time
