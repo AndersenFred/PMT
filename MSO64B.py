@@ -1,3 +1,4 @@
+#Works for MSO64B deveoped for PMT measurements
 import pyvisa as visa
 import os
 import numpy as np
@@ -32,6 +33,7 @@ class Osci(object):
 	def read(self, command):
 		'''Easy way to read'''
 		return self.visa_if.read(command)
+	
 
 	def messung(self,Number_of_SEQuence = 1,AVERAGe_Number = 100):
 		'''Returns the Waveform shown on the Display time in s and Voltage in  '''
@@ -47,7 +49,6 @@ class Osci(object):
 		self.write('ACQ:STATE 1')
 		while float(self.query('ACQ:NUMAC?').strip())<1:
 			time.sleep(.1)
-			#print('y')
 		print(self.query('ACQuire:NUMAVg?'))
 		time.sleep(1)
 		before = time.time()
@@ -72,12 +73,32 @@ class Osci(object):
 		#plt.savefig('{}.pdf'.format(Name))
 
 	def __del__(self):
-		'''Deconstructor, alwalys call at the end, otherwise there might be bugs!'''
+		'''Deconstructor. alwalys call at the end, otherwise there might be bugs!'''
+		time.sleep(.1)
 		self.write('CLEAR')
 		self.visa_if.close()
 		self.rm.close()
 		print('Close')
-
+		
+	@staticmethod
+	def save_waveforms_to_file(filepath, data_array, hor_interval, vert_gain, comment=None):
+		with h5py.File(filepath, "w") as file:
+			file.attrs[u'vertical_gain'] = vert_gain
+			file.attrs[u'horizontal_interval'] = hor_interval
+			if comment is not None:
+				file.attrs[u'comment'] = comment
+			file.create_dataset('waveforms', data=data_array)
+		
+	@staticmethod	
+	def read_waveforms_from_file(filepath):
+		retval = dict()
+		with h5py.File(filepath, "r") as file:
+			retval['vertical_gain'] = float(file.attrs[u'vertical_gain'])
+			retval['horizontal_interval'] = float(file.attrs[u'horizontal_interval'])
+			retval['comment'] = str(file.attrs[u'comment'])
+			retval['data'] = np.asarray(file['waveforms'])
+		return retval
+	
 if __name__=='__main__':
 	os.system('sudo ifconfig enp4s5 192.168.2.51')
 	osci =  Osci('192.168.2.58')
