@@ -13,7 +13,7 @@ class Funk_Gen(object):
 	try:
         	return self.DG.query(command)
 	except Exception:
-		print('Timeout Error: probably does the command {} not exist'.format(command))
+		print('Timeout Error: The command {} does probably  not exist'.format(command))
 		return
 
     def write(self, command):
@@ -21,15 +21,16 @@ class Funk_Gen(object):
 	try:
         	return self.DG.write(command)
 	except Exception:
-		print('Timeout Error: probably does the command {} not exist'.format(command))
+		print('Timeout Error: The command {} does probably  not exist'.format(command))
 		return
     def read(self, command):
         '''Easy way to read'''
 	try:
         	return self.DG.read(command)
 	except Exception:
-		print('Timeout Error: probably does the command {} not exist'.format(command))
+		pprint('Timeout Error: The command {} does probably  not exist'.format(command))
 		return
+	
     def sinus(self, freq=1000, ampl=1, off=0):
         self.write('APPLy:SINusoid {0},{1},{2}'.format(freq,ampl,off))
 
