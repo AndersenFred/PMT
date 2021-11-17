@@ -1,7 +1,6 @@
 import pyvisa as visa
 import os
 import numpy as np
-#Mal testen mit python 2
 import matplotlib.pyplot as plt
 import time
 OPEN_CMD = "TCPIP0::{}::INSTR"
