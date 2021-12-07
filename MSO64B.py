@@ -3,7 +3,6 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import time
-import h5py
 
 
 
@@ -36,17 +35,7 @@ class Osci(object):
 		'''Easy way to read'''
 		return self.visa_if.read(command)
 
-	@staticmethod
-	def save_to_file(filepath, data, samplerate, Measurement_time, y_off, YMULT):
-		with h5py.File('{}.h5'.format(filepath),'w') as file:
-			file.attrs[u'samplerate'] = samplerate
-			file.attrs[u'measurement_time'] = Measurement_time
-			file.attrs[u'y_off'] = y_off
-			file.attrs[u'YMULT'] = YMULT
-			file.create_dataset('waveforms', data = data)
-
-	def messung(self,Number_of_SEQuence = 500, Measurement_time = 3*10**-7, samplerate = 10**7, Max_Ampl = 1, vertical_delay = -23E-9):
-		'''Returns the Waveform shown on the Display time in s and Voltage in V '''
+	def messung(self,Number_of_SEQuence = 500, Measurement_time = 3*10**-7, samplerate =  3.125*10**10, Max_Ampl = 1, vertical_delay = -23E-9):
 		points = int(Measurement_time*samplerate)
 		self.write('CH1:DESKEW {}'.format(vertical_delay))
 		self.write('DISPLAY:WAVEV1:CH1:VERT:SCAL {}'.format(Max_Ampl/10))
@@ -58,33 +47,24 @@ class Osci(object):
 		self.write('DATa:WIDth 1')
 		self.write('ACQ:STATE STOP')
 		self.write('ACQ:SEQuence:NUMSEQuence {}'.format(Number_of_SEQuence))
-		self.write('ACQ:STOPAfter SEQ')
 		self.write('CLEAR')
-		self.write('ACQ:STATE 1')
+		self.write('ACQuire:STOPAfter SEQuence')
+		print(self.query('ACQuire:STOPAfter?'))
+		self.write('ACQ:STATE ON')
 		before = time.time()
-		while float(self.query('ACQ:NUMAC?').strip())<1:
+		while float(self.query('ACQ:SEQuence:CURrent?').strip())<Number_of_SEQuence:
 			time.sleep(.1)
-			#print('y')
-		time.sleep(1)
+		self.write('ACQ:STATE STOP')
+		print(self.query('ACQ?'))
 		y_values=self.query_binary_values('CURV?', datatype = self.datatype)
+
 		duration=time.time()-before
 		print('Measurement duration: ',  duration)
-		#XDIV = float(self.query('HORizontal:MODE:SCA?'))
 		time.sleep(1)
 		YOFF = float(self.query('WFMOutpre:YOFf?').strip())
 		YMU = float(self.query('WFMO:YMU?').strip())
-		#x_values = np.linspace((-5)*XDIV,XDIV*5,len(y_values))*10**6
 		return y_values, samplerate, Measurement_time, YOFF, YMU
 
-	def plot(self, Name = 'Messung.npy'):
-		fig, ax = plt.subplots(figsize=(10,5))
-		x, y = self.messung()
-		plt.xlabel(r"time in $\mu$s")
-		plt.ylabel("Amplitude in V")
-		ax.plot(x,y, label = 'Chanel 1')
-		plt.show()
-		#np.save(Name,(np.array([x,y]).T))
-		#plt.savefig('{}.pdf'.format(Name))
 
 	def __del__(self):
 		'''Deconstructor, alwalys call at the end, otherwise there might be bugs!'''
@@ -99,7 +79,5 @@ if __name__=='__main__':
 	#osci.write('ACQuire:MODe AVERAGe;:ACQuire:NUMAVg 100')
 	#time.sleep(2)
 	#osci.write('CH1:DESK 1')
-	#osci.write('DISPLAY:WAVEV1:CH1:VERT:SCAL 0.1')
-	#osci.plot()
 	time.sleep(2)
 	del osci
