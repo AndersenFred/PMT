@@ -69,10 +69,7 @@ class Osci(object):
 		YMU = float(self.query('WFMO:YMU?').strip())
 		y_values = np.reshape(np.frombuffer((y_values), dtype=np.int8),(Number_of_SEQuence,int(len(y_values)/Number_of_SEQuence)))
 		self.write('DISplay:WAVEform On')
-		print(len(y_values[0,:]))
-		print(points)
-		print(len(y_values[0,:])-points)
-		return y_values[:,len(y_values[0,:])-points-1:len(y_values[0,:])-1], samplerate, Measurement_time, YOFF, YMU
+		return y_values[:,len(y_values[0,:])-points-1:len(y_values[0,:])-1], Measurement_time, YOFF, YMU, samplerate
 
 
 	def __del__(self):
@@ -111,11 +108,12 @@ class Funk_Gen(object):#no more used
         pass
 
 class SHR(object):
-	def __init__(self, volt = 1000, ramp = 220):
+	def __init__(self, volt = 1000, ramp = 320):
 		self.rm = visa.ResourceManager('@py')
 		self.inst = self.rm.open_resource('ASRL/dev/ttyACM0::INSTR')
 		self.volt = volt
 		self.ramp = ramp
+		#self.voltage(volt=self.volt)
 
 	def query(self, command):
 		'''Easy way to query'''
@@ -131,7 +129,7 @@ class SHR(object):
 
 	def voltage(self, volt, chanel = 0):
 		self.volt = volt
-		return self.write('VOLTage {0},(@{0})'.format(volt,chanel))
+		return self.write(':VOLTage {0},(@{1})'.format(self.volt,chanel))
 
 	def output_on(self, chanel = 0):
 		self.write(':VOLTage ON,(@{0})'.format(chanel))
@@ -140,4 +138,4 @@ class SHR(object):
 		self.write(':VOLTage OFF,(@{0})'.format(chanel))
 
 	def __del__(self):
-		self.write(':CONF:EVent CLEAR')
+		self.write(':EVENT CLEAR,(@0)')
