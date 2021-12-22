@@ -1,7 +1,6 @@
 import pyvisa as visa
 import os
 import numpy as np
-import matplotlib.pyplot as plt
 import time
 
 
@@ -11,12 +10,12 @@ class Osci(object):
 	def __init__(self, ip = '192.168.2.58', datatype='b'):
 		'''Initializes the Osci'''
 		self.OPEN_CMD = "TCPIP0::{}::INSTR"
-		os.system('sudo ifconfig enp4s5 192.168.2.51')
+		os.system('sudo ifconfig enp4s5 192.168.2.51')#config ip of computer
 		self.ip = ip
 		self.rm = visa.ResourceManager('@py')
 		self.visa_if = self.rm.open_resource(self.OPEN_CMD.format(self.ip))
 		self.visa_if.timeout=10000
-		self.datatype = datatype
+		self.datatype = datatype#no more in use
 		time.sleep(.1)
 
 	def query(self, command):
@@ -24,7 +23,7 @@ class Osci(object):
 		return self.visa_if.query(command)
 
 	def query_binary_values(self, command, datatype, container=np.array):
-		'''Easy way to query binary values'''
+		'''Easy way to query binary values, no more in use'''
 		return self.visa_if.query_binary_values(command, datatype=datatype, is_big_endian=False, container=container)
 
 	def write(self, command):
@@ -37,37 +36,37 @@ class Osci(object):
 
 	def messung(self,Number_of_SEQuence = 500, Measurement_time = 1*10**-8,\
 		samplerate =  3.125*10**10, Max_Ampl = 1, vertical_delay = 125E-9,chanel = 'CH1'):
-		self.write('HOR:MODE:SAMPLERate {}'.format(samplerate))
+		self.write('HOR:MODE:SAMPLERate {}'.format(samplerate))#write the samplerate, problem is osci only uses specific values
 		time.sleep(.1)
-		samplerate = float(self.query('HOR:MODE:SAMPLERate?'))
-		points = int(Measurement_time*samplerate)
+		samplerate = float(self.query('HOR:MODE:SAMPLERate?'))#to get correct samplerate
+		points = int(Measurement_time*samplerate)# calculate the number of points
 		self.write('CH1:DESKEW {}'.format(vertical_delay))
 		self.write('DISPLAY:WAVEV1:CH1:VERT:SCAL {}'.format(Max_Ampl/10))
 		self.write('ACQ:SEQuence:NUMSEQuence 1')
 		time.sleep(.1)
 		self.write('ACQuire:MODe SAMPLE')
-		self.write('DISplay:WAVEform OFF')
+		self.write('DISplay:WAVEform OFF')#for faster Measurement
 		self.write('HOR:MODE:RECO {}'.format(points))
 		self.write('DATA:STOP {}'.format(points))
-		self.write('DATa:WIDth 1')
+		self.write('DATa:WIDth 1')#number of byte per point
 		self.write('ACQ:STATE STOP')
-		self.write('HOR:FAST:STATE ON')
+		self.write('HOR:FAST:STATE ON')#FastFrame , Osci uses this mode instead of Sequences
 		self.write('HORizontal:FASTframe:COUNt {}'.format(Number_of_SEQuence))
 		self.write('DATa:SOURce {}'.format(chanel))
-		self.write('CLEAR')
+		self.write('CLEAR')#Delete old points
 		self.write('ACQuire:STOPAfter SEQuence')
 		self.write('ACQ:STATE ON')
 		before = time.time()
-		while float(self.query('ACQ:SEQuence:CURrent?').strip())<1:
+		while float(self.query('ACQ:SEQuence:CURrent?').strip())<1:#waitung untll measurement is finished
 			time.sleep(.1)
-		self.write('ACQ:STATE STOP')
-		self.write('CURVe?')
-		y_values = self.visa_if.read_raw()
+		self.write('ACQ:STATE STOP')#stop measure
+		self.write('CURVe?')#preperation to get the values
+		y_values = self.visa_if.read_raw()#get raw data
 		print('Measurement duration: ',  time.time()-before)
 		time.sleep(1)
-		YOFF = float(self.query('WFMOutpre:YOFf?').strip())
-		YMU = float(self.query('WFMO:YMU?').strip())
-		y_values = np.reshape(np.frombuffer((y_values), dtype=np.int8),(Number_of_SEQuence,int(len(y_values)/Number_of_SEQuence)))
+		YOFF = float(self.query('WFMOutpre:YOFf?').strip())# get the offset
+		YMU = float(self.query('WFMO:YMU?').strip())# get the propotionality factor
+		y_values = np.reshape(np.frombuffer((y_values), dtype=np.int8),(Number_of_SEQuence,int(len(y_values)/Number_of_SEQuence)))#reshape and convert binary values to usable values
 		self.write('DISplay:WAVEform On')
 		return y_values[:,len(y_values[0,:])-points-1:len(y_values[0,:])-1], Measurement_time, YOFF, YMU, samplerate
 
@@ -108,6 +107,7 @@ class Funk_Gen(object):#no more used
         pass
 
 class SHR(object):
+	'''High voltage source iseg SHR '''
 	def __init__(self, volt = 1000, ramp = 320):
 		self.rm = visa.ResourceManager('@py')
 		self.inst = self.rm.open_resource('ASRL/dev/ttyACM0::INSTR')
