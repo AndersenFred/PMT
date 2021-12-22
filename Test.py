@@ -17,7 +17,7 @@ SHR.voltage(HV)
 SHR.output_on()
 time.sleep(5)
 
-h5_filename = 'KM3Net_{}'.format(SN)
+h5_filename = 'KM3Net_{}'.format(HV)
 osci =  inst.Osci()
 y_values, Measurement_time, YOFF, YMU, samplerate = osci.messung(100, Measurement_time =2*10**-6, samplerate = 3.125e10, Max_Ampl = 10e-3)
 
