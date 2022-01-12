@@ -64,20 +64,20 @@ class Osci(object):
 		y_values = self.visa_if.read_raw()#get raw data
 		print('Measurement duration: ',  time.time()-before)
 		time.sleep(1)
-		YOFF = float(self.query('WFMOutpre:YOFf?').strip())# get the offset
+		YOFF = float(self.query('WFMOutpre:YZEro?').strip())# get the offset
 		YMU = float(self.query('WFMO:YMU?').strip())# get the propotionality factor
 		y_values = np.reshape(np.frombuffer((y_values), dtype=np.int8),(Number_of_SEQuence,int(len(y_values)/Number_of_SEQuence)))#reshape and convert binary values to usable values
 		self.write('DISplay:WAVEform On')
 		return y_values[:,len(y_values[0,:])-points-1:len(y_values[0,:])-1], Measurement_time, YOFF, YMU, samplerate
 
 
-	def __del__(self):
-		'''Deconstructor, alwalys call at the end, otherwise there might be bugs!'''
+	#def __del__(self):
+		#'''Deconstructor, alwalys call at the end, otherwise there might be bugs!'''
 		#self.write('CLEAR')# Somehow if active there is sometimes a timeout, I don't know why
 		#time.sleep(1)
-		self.visa_if.close()
-		self.rm.close()
-		print('Close')
+		#self.visa_if.close()
+		#self.rm.close()
+		#print('Close')----++
 
 class Funk_Gen(object):#no more used
     def __init__(self):
