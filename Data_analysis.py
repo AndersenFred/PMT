@@ -13,7 +13,6 @@ def doppel_gauss(x,mu_1,sig_1,ampl_1,mu_2,sig_2,ampl_2):
     return ampl_1/(np.sqrt(2*np.pi)*sig_1)*np.exp(-(x-mu_1)**2/(2*sig_1**2))\
     +ampl_2/(np.sqrt(2*np.pi)*sig_2)*np.exp(-(x-mu_2)**2/(2*sig_2**2))
 
-
 def gauss(x,mu,sigma,a):
     ''' A function with a normal distribution'''
     return a*np.exp(-(x-mu)**2/(2*sigma**2))/(np.sqrt(2*np.pi)*sigma)
@@ -84,7 +83,7 @@ def mean_plot(y):
     ax.plot(np.mean(y, axis = 0))
     plt.show()
 
-def hist(waveforms, ped_min=60, ped_max=180, sig_min=200, sig_max=400, histo_range= None, plot = True, save = False, name = None):
+def hist(waveforms, ped_min=60, ped_max=180, sig_min=200, sig_max=400, histo_range= None, plot = True, name = None):
     ped_sig_ratio = (ped_max - ped_min) / (sig_max - sig_min)
     pedestals = np.sum(waveforms[:, ped_min:ped_max], axis=1)
     charges = (np.sum(waveforms[:, sig_min:sig_max], axis=1) - pedestals * ped_sig_ratio)
@@ -92,7 +91,7 @@ def hist(waveforms, ped_min=60, ped_max=180, sig_min=200, sig_max=400, histo_ran
         fig, ax = plt.subplots(figsize= (10,5))
         ax.hist(charges, range=None, bins=200, log=True)
         plt.show()
-        if save:
+        if not name == None :
             fig.savefig(name)
     return np.histogram(charges, range = histo_range, bins = 200)
 
@@ -106,7 +105,7 @@ def fit(x,y, p0 = [], plot = True):
         plt.show()
     return p_opt, cov
 
-def transit_time_speed(waveforms,threshold=0.01):
+def transit_time_spread(waveforms,threshold=0.01):
     k = []
     for i in range(len(waveforms[0,:])):
         for j in range(len(waveforms[:,i])):
@@ -114,3 +113,16 @@ def transit_time_speed(waveforms,threshold=0.01):
                 k.append(j)
                 break
     return k
+def transit_time_spread_Testdaten(waveforms,threshold=0.008):
+    k = []
+    for i in range(len(waveforms[:,0])):
+        for j in range(len(waveforms[i,:])):
+            if waveforms[i,j] < threshold:
+                k.append(j)
+                break
+    return k
+
+def log_transit_spread(SN,n,N,bins,binwidth,p0,cov):
+    name = 'Laser_Transit_Speed/log_transit_time_spread_{}.txt'.format(SN)
+    f = open(name, 'a')
+    text = 'n_triggerd = {0}\n N = {1}\n Number Photoelektrons = {2}\n Histparameter:\n bins = {3}, bindiwdth = {4},\n Fitparameter: mu, sigma, Ampl= {5},cov = {6}'.format(n,N,-np.log(1-n/N),bins,bunwidth,p0,cov)
