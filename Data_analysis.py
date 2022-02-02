@@ -2,6 +2,7 @@ import numpy as np
 import h5py
 import matplotlib.pyplot as plt
 import scipy.optimize as opt
+from datetime import datetime
 import scipy.constants
 import bisect
 from peeemtee.pmt_resp_func import ChargeHistFitter
@@ -123,6 +124,8 @@ def transit_time_spread_Testdaten(waveforms,threshold=0.008):
     return k
 
 def log_transit_spread(SN,n,N,bins,binwidth,p0,cov):
-    name = 'Laser_Transit_Speed/log_transit_time_spread_{}.txt'.format(SN)
+    name = 'Laser_Transit_Spread/log_transit_time_spread_{}.txt'.format(SN)
     f = open(name, 'a')
-    text = 'n_triggerd = {0}\n N = {1}\n Number Photoelektrons = {2}\n Histparameter:\n bins = {3}, bindiwdth = {4},\n Fitparameter: mu, sigma, Ampl= {5},cov = {6}'.format(n,N,-np.log(1-n/N),bins,bunwidth,p0,cov)
+    text = 'Date = {8},\n n_triggerd = {0}\n N = {1}\n Number Photoelektrons = {2}\n Histparameter:\n bins = {3}, binwidth = {4},\n Fitparameter: mu[ns], sigma[ns], Ampl= {5},\n Delta_mu, Delta_sigma, delta_Ampl = {6},\n cov =\n {7}\n\n'.format(n,N,-np.log(1-n/N),bins,binwidth,p0,np.sqrt(np.diag(cov)),cov,datetime.now(),SN)
+    f.write(text)
+    f.close()
