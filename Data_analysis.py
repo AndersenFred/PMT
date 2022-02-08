@@ -4,10 +4,67 @@ import matplotlib.pyplot as plt
 import scipy.optimize as opt
 from datetime import datetime
 import scipy.constants
-import bisect
 from peeemtee.pmt_resp_func import ChargeHistFitter
 e = scipy.constants.e
 from scipy.optimize import curve_fit as curve_fit
+
+class WavesetReader:
+    def __init__(self, filename):
+        self.filename = filename
+        self._wavesets = None
+
+    @property
+    def wavesets(self):
+        if self._wavesets is None:
+            with h5py.File(self.filename, "r") as f:
+                self._wavesets = list(f.keys())
+        return self._wavesets
+
+    def __getitem__(self, key):
+        with h5py.File(self.filename, "r") as f:
+            raw_waveforms = f[f"{key}/waveforms"][:]
+            v_gain = f[f"{key}/waveform_info/v_gain"][()]
+            h_int = f[f"{key}/waveform_info/h_int"][()]
+            Measurement_time = f[f"{key}/waveform_info/Measurement_time"][()]
+            y_off = f[f"{key}/waveform_info/y_off"][()]
+        return Waveset(raw_waveforms, v_gain, h_int,Measurement_time,y_off)
+
+class Waveset:
+    def __init__(self, raw_waveforms, v_gain, h_int,Measurement_time, y_off):
+        self.raw_waveforms = raw_waveforms
+        self.v_gain = v_gain
+        self.h_int = h_int
+        self.Measurement_time = Measurement_time
+        self.samplerate = 1/h_int
+        self.y_off = y_off
+        self._waveforms = None
+
+    @property
+    def waveforms(self):
+        if self._waveforms is None:
+            self._waveforms = self.raw_waveforms * self.v_gain+self.y_off
+        return self._waveforms
+
+    def zeroed_waveforms(self, baseline_min, baseline_max):
+        return (self.waveforms.T- np.mean(self.waveforms[:, baseline_min:baseline_max], axis=1)).T
+
+def save_rawdata_to_file(h5_filename, data, Measurement_time, y_off, YMULT, samplerate, HV):
+    f = h5py.File(h5_filename, 'a')
+    i=0
+    while(True):
+        try:
+            f.create_dataset(f"{HV}_{i}/waveforms", data=data, dtype=np.int8)
+            wf_info = f.create_group(f"{HV}_{i}/waveform_info")
+            break
+        except ValueError:
+            i+=1
+            print(i)
+    wf_info["h_int"] = 1/samplerate
+    wf_info["v_gain"] =  YMULT
+    wf_info["Measurement_time"] = Measurement_time
+    wf_info["y_off"] = y_off
+    f.close()
+
 
 def doppel_gauss(x,mu_1,sig_1,ampl_1,mu_2,sig_2,ampl_2):
     '''A function with two normal distributions'''
@@ -18,51 +75,19 @@ def gauss(x,mu,sigma,a):
     ''' A function with a normal distribution'''
     return a*np.exp(-(x-mu)**2/(2*sigma**2))/(np.sqrt(2*np.pi)*sigma)
 
-def read_rawdata_from_file(filepath):
-    '''Read rawdata from file'''
-    retval = dict()
-    with h5py.File(filepath, 'r') as file:
-        retval['samplerate'] = float(file.attrs[u'samplerate'])
-        retval['measurement_time'] = float(file.attrs[u'measurement_time'])
-        retval['y_off'] = float(file.attrs[u'y_off'])
-        retval['YMULT'] = float(file.attrs[u'YMULT'])
-        retval['HV'] = float(file.attrs[u'HV'])
-        retval['data'] = np.asarray(file['waveforms'])
-    return retval
 
-def save_rawdata_to_file(filepath, data, Measurement_time, y_off, YMULT, samplerate, HV):
-    '''save rawdata to file'''
-    with h5py.File('{}.h5'.format(filepath),'w') as file:
-        file.attrs[u'samplerate'] = samplerate
-        file.attrs[u'measurement_time'] = Measurement_time
-        file.attrs[u'y_off'] = y_off
-        file.attrs[u'YMULT'] = YMULT
-        file.attrs[u'HV'] = HV
-        file.create_dataset('waveforms', data = data)
 
-def values(retval = None, filename = None):
-    '''Method for reading Measured values. From retval and filename one has to be none '''
-    if(retval == None and filename == None):
-        print('either retval or filename must not be none')
-        return
-    elif filename != None and retval != None:
-        print('either retval or filename must not be none')
-        return
-    elif retval == None and filename != None:
-        retval = read_rawdata_from_file(filename)
-    samplerate = retval['samplerate']
-    measurement_time = retval['measurement_time']
-    y_off = retval['y_off']
-    YMULT = retval['YMULT']
-    HV = retval['HV']
-    data = retval['data']
-    return data, measurement_time, y_off, YMULT, samplerate, HV
-
-def x_y_values(data, Measurement_time, y_off, YMULT, samplerate = None):
+def x_y_values(data,  y_off, YMULT, Measurement_time = None, samplerate = None):
     '''Method to get the x and y values from rawdata'''
-    x = np.linspace(0,Measurement_time,len(data[0,:]))
+    if not Measurement_time ==None:
+        x = np.linspace(0,Measurement_time,len(data[:,0]))
+    elif not samplerate == None:
+        x = np.linspace(0,len(data[0,:])/samplerate,len(data[:,0]))
+    else:
+        raise AttributeError('Either Measurement_time or samplerate must not be None')
     y = ((data)*YMULT+y_off).T
     return x,y
+
 def numinteg(x,y):
     '''simple Method for numeric integration'''
     return np.sum((x[1]-x[0])*y)
