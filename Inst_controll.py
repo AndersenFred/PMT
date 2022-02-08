@@ -6,7 +6,6 @@ import time
 
 
 class Osci(object):
-
 	def __init__(self, ip = '192.168.2.58', datatype='b'):
 		'''Initializes the Osci'''
 		self.OPEN_CMD = "TCPIP0::{}::INSTR"
@@ -103,8 +102,8 @@ class Funk_Gen(object):#no more used
         self.write('APPLy:PULSe {0},{1},{2}'.format(freq,ampl,off))
         self.write('PULSe:WIDTh {}'.format(width))
 
-    def __del__(self):
-        pass
+    #def __del__(self):
+        #pass
 
 class SHR(object):
 	'''High voltage source iseg SHR '''
@@ -137,5 +136,5 @@ class SHR(object):
 	def output_off(self, chanel = 0):
 		self.write(':VOLTage OFF,(@{0})'.format(chanel))
 
-	def __del__(self):
-		self.write(':EVENT CLEAR,(@0)')
+	#def __del__(self):
+	#	self.write(':EVENT CLEAR,(@0)')
