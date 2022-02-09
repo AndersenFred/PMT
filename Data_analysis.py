@@ -49,7 +49,7 @@ class Waveset:
         return (self.waveforms.T- np.mean(self.waveforms[:, baseline_min:baseline_max], axis=1)).T
 
 def save_rawdata_to_file(h5_filename, data, Measurement_time, y_off, YMULT, samplerate, HV):
-    f = h5py.File(h5_filename, 'a')
+    f = h5py.File(f'{h5_filename}.h5', 'a')
     i=0
     while(True):
         try:
@@ -75,17 +75,15 @@ def gauss(x,mu,sigma,a):
     ''' A function with a normal distribution'''
     return a*np.exp(-(x-mu)**2/(2*sigma**2))/(np.sqrt(2*np.pi)*sigma)
 
-
-
 def x_y_values(data,  y_off, YMULT, Measurement_time = None, samplerate = None):
     '''Method to get the x and y values from rawdata'''
-    if not Measurement_time ==None:
-        x = np.linspace(0,Measurement_time,len(data[:,0]))
+    if not Measurement_time == None:
+        x = np.linspace(0,Measurement_time,len(data[0,:]))
     elif not samplerate == None:
-        x = np.linspace(0,len(data[0,:])/samplerate,len(data[:,0]))
+        x = np.linspace(0,len(data[0,:])/samplerate,len(data[0,:]))
     else:
         raise AttributeError('Either Measurement_time or samplerate must not be None')
-    y = ((data)*YMULT+y_off).T
+    y = (data)*YMULT+y_off
     return x,y
 
 def numinteg(x,y):
@@ -133,8 +131,8 @@ def fit(x,y, p0 = [], plot = True):
 
 def transit_time_spread(waveforms,threshold=0.01):
     k = []
-    for i in range(len(waveforms[0,:])):
-        for j in range(len(waveforms[:,i])):
+    for i in range(len(waveforms[:,0])):
+        for j in range(len(waveforms[i:])):
             if waveforms[j,i] > threshold:
                 k.append(j)
                 break
@@ -148,8 +146,8 @@ def transit_time_spread_Testdaten(waveforms,threshold=0.008):
                 break
     return k
 
-def log_transit_spread(SN,n,N,bins,binwidth,p0,cov):
-    name = 'Laser_Transit_Spread/log_transit_time_spread_{}.txt'.format(SN)
+def log_transit_spread(name,SN,n,N,bins,binwidth,p0,cov):
+    name = '{}.txt'.format(name)
     f = open(name, 'a')
     text = 'Date = {8},\n n_triggerd = {0}\n N = {1}\n Number Photoelektrons = {2}\n Histparameter:\n bins = {3}, binwidth = {4},\n Fitparameter: mu[ns], sigma[ns], Ampl= {5},\n Delta_mu, Delta_sigma, delta_Ampl = {6},\n cov =\n {7}\n\n'.format(n,N,-np.log(1-n/N),bins,binwidth,p0,np.sqrt(np.diag(cov)),cov,datetime.now(),SN)
     f.write(text)
