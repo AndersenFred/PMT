@@ -107,12 +107,13 @@ class Funk_Gen(object):#no more used
 
 class SHR(object):
 	'''High voltage source iseg SHR '''
-	def __init__(self, volt = 1000, ramp = 320):
+	def __init__(self, volt = 1000, chanel = 0, ramp = 320):
+		self.chanel = chanel
 		self.rm = visa.ResourceManager('@py')
 		self.inst = self.rm.open_resource('ASRL/dev/ttyACM0::INSTR')
 		self.volt = volt
 		self.ramp = ramp
-		#self.voltage(volt=self.volt)
+		self.voltage(volt=self.volt, chanel = self.chanel)
 
 	def query(self, command):
 		'''Easy way to query'''
