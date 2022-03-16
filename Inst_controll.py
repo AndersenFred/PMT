@@ -2,7 +2,7 @@ import pyvisa as visa
 import os
 import numpy as np
 import time
-
+from halo import Halo
 
 
 class Osci(object):
@@ -55,12 +55,15 @@ class Osci(object):
 		self.write('CLEAR')#Delete old points
 		self.write('ACQuire:STOPAfter SEQuence')
 		self.write('ACQ:STATE ON')
+		spinner = Halo(text='Aquire Data', spinner='dots')
+		spinner.start()
 		before = time.time()
 		while float(self.query('ACQ:SEQuence:CURrent?').strip())<1:#waitung untll measurement is finished
 			time.sleep(.1)
 		self.write('ACQ:STATE STOP')#stop measure
 		self.write('CURVe?')#preperation to get the values
 		y_values = self.visa_if.read_raw()#get raw data
+		spinner.stop()
 		print('Measurement duration: ',  time.time()-before)
 		time.sleep(1)
 		YOFF = float(self.query('WFMOutpre:YZEro?').strip())# get the offset
