@@ -103,24 +103,26 @@ def plot(x,y,figsize = (10,5), index = False):
     ax.plot(x,y)
     plt.show()
 
-def mean_plot(y):
+def mean_plot(y, int_ranges = (60, 180, 200, 350)):
     fig, ax = plt.subplots(figsize = (10,5))
+    ax.axvspan(int_ranges[0], int_ranges[1], facecolor="red", alpha=0.5)
+    ax.axvspan(int_ranges[2], int_ranges[3], facecolor="green", alpha=0.5)
+    plt.title("mean waveform")
     y_data = np.mean(y, axis = 0)
     y_std = np.std(y,axis=0)/np.sqrt(len(y))
     ax.plot(y_data)
     ax.fill_between(np.linspace(1,len(y_data),len(y_data)), y_data-y_std, y_data + y_std, color='gray', alpha=0.2)
     plt.show()
 
-def hist(waveforms, ped_min=50, ped_max= 450, sig_min= 500, sig_max=1400, external_value = False, bins = 200, histo_range= None, plot = False, name = None,title = None):
-    #mean_plot(waveforms)
-    while not external_value:
-        try:
-            ped_min,ped_max,sig_min,sig_max = [int(i) for i in input('set integration ranges: <ped_min, ped_max, sig_min, sig_max>\n').split(', ')]
-            if ped_min<0 or ped_max<0 or sig_min<0 or sig_max<0:
-                raise ValueError
-            break
-        except ValueError:
-            print('no valid input')
+def hist(waveforms, ped_min=50, ped_max= 550, sig_min= 650, sig_max=1300, bins = 200, histo_range= None, plot = False, name = None,title = None):
+    int_ranges = (ped_min, ped_max, sig_min, sig_max)
+    mean_plot(waveforms,int_ranges)
+    try:
+        ped_min,ped_max,sig_min,sig_max = [int(i) for i in input('set integration ranges: <ped_min, ped_max, sig_min, sig_max>\n').split(', ')]
+        if ped_min<0 or ped_max<0 or sig_min<0 or sig_max<0:
+            raise ValueError
+    except ValueError:
+        print(f'ValueError: used integration ranges {int_ranges}')
     ped_sig_ratio = (ped_max - ped_min) / (sig_max - sig_min)
     pedestals = np.sum(waveforms[:, ped_min:ped_max], axis=1) * ped_sig_ratio
     charges = (np.sum(waveforms[:, sig_min:sig_max], axis=1))-pedestals
@@ -131,9 +133,10 @@ def hist(waveforms, ped_min=50, ped_max= 450, sig_min= 500, sig_max=1400, extern
             plt.title(title)
         plt.show()
         if not name == None:
+            print(f'saving {name}')
             fig.savefig(name + '.pdf')
     hi, bin_edges = np.histogram(charges, range = histo_range, bins = bins)
-    bin_edges = (bin_edges-(bin_edges[2]-bin_edges[1])/2)[:-1]
+    bin_edges = (bin_edges-(bin_edges[1])/2)[:-1]
     return hi, bin_edges
 
 def hist_fitter(hi, bin_edges, h_int):#input has to be from hist()
