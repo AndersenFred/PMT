@@ -2,7 +2,8 @@ import pyvisa as visa
 import os
 import numpy as np
 import time
-from halo import Halo
+import halo
+
 
 
 class Osci(object):
@@ -10,10 +11,10 @@ class Osci(object):
 		'''Initializes the Osci'''
 		self.OPEN_CMD = "TCPIP0::{}::INSTR"
 		os.system('sudo ifconfig enp4s5 192.168.2.51')#config ip of computer
-		self.ip = ip
+		self.ip = ip# ip of the Osci
 		self.rm = visa.ResourceManager('@py')
 		self.visa_if = self.rm.open_resource(self.OPEN_CMD.format(self.ip))
-		self.visa_if.timeout=10000
+		self.visa_if.timeout=10000#set a high timeout, nessesary!
 		self.datatype = datatype#no more in use
 		time.sleep(.1)
 
@@ -35,14 +36,13 @@ class Osci(object):
 
 	def messung(self,Number_of_SEQuence = 500, Measurement_time = 1*10**-8,\
 		samplerate =  3.125*10**10, Max_Ampl = 1, vertical_delay = 125E-9,chanel = 'CH1'):
+		'''Makes the nessesary configuration for measuring, and returns an 2D array of rawdata, and several parameters'''
 		self.write('HOR:MODE:SAMPLERate {}'.format(samplerate))#write the samplerate, problem is osci only uses specific values
-		time.sleep(.1)
+		time.sleep(.1)#sleep needed, otherwise sometimes one get the old samplerate
 		samplerate = float(self.query('HOR:MODE:SAMPLERate?'))#to get correct samplerate
 		points = int(Measurement_time*samplerate)# calculate the number of points
 		self.write('CH1:DESKEW {}'.format(vertical_delay))
-		self.write('DISPLAY:WAVEV1:CH1:VERT:SCAL {}'.format(Max_Ampl/10))
-		self.write('ACQ:SEQuence:NUMSEQuence 1')
-		time.sleep(.1)
+		self.write('ACQ:SEQuence:NUMSEQuence 1')#Sequenes do not work, therefore use numver of sequence = 1
 		self.write('ACQuire:MODe SAMPLE')
 		self.write('DISplay:WAVEform OFF')#for faster Measurement
 		self.write('HOR:MODE:RECO {}'.format(points))
@@ -55,15 +55,18 @@ class Osci(object):
 		self.write('CLEAR')#Delete old points
 		self.write('ACQuire:STOPAfter SEQuence')
 		self.write('ACQ:STATE ON')
-		spinner = Halo(text='Aquire Data', spinner='dots')
-		spinner.start()
+		spinner = halo.Halo(text='Recording waveforms...', spinner='dots')#just for fun
+		spinner.start()#start the loading symbold
 		before = time.time()
 		while float(self.query('ACQ:SEQuence:CURrent?').strip())<1:#waitung untll measurement is finished
 			time.sleep(.1)
 		self.write('ACQ:STATE STOP')#stop measure
+		spinner.stop()
+		spinner = halo.Halo(text='Transfering data', spinner='dots')#just for fun
+		spinner.start()#start the loading symbold
 		self.write('CURVe?')#preperation to get the values
 		y_values = self.visa_if.read_raw()#get raw data
-		spinner.stop()
+		spinner.stop()#stop the loading symbol
 		print('Measurement duration: ',  time.time()-before)
 		time.sleep(1)
 		YOFF = float(self.query('WFMOutpre:YZEro?').strip())# get the offset
@@ -73,13 +76,13 @@ class Osci(object):
 		return y_values[:,len(y_values[0,:])-points-1:len(y_values[0,:])-1], Measurement_time, YOFF, YMU, samplerate
 
 
-	#def __del__(self):
+	#def __del__(self):#Does not work at the moment
 		#'''Deconstructor, alwalys call at the end, otherwise there might be bugs!'''
 		#self.write('CLEAR')# Somehow if active there is sometimes a timeout, I don't know why
 		#time.sleep(1)
 		#self.visa_if.close()
 		#self.rm.close()
-		#print('Close')----++
+		#print('Close')
 
 class Funk_Gen(object):#no more used
     def __init__(self):
