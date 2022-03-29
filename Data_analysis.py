@@ -7,6 +7,7 @@ import scipy.constants
 from peeemtee.pmt_resp_func import ChargeHistFitter
 e = scipy.constants.e
 from scipy.optimize import curve_fit as curve_fit
+from peeemtee.pmt_resp_func import ChargeHistFitter
 
 class WavesetReader:
     def __init__(self, filename):
@@ -104,20 +105,49 @@ def plot(x,y,figsize = (10,5), index = False):
 
 def mean_plot(y):
     fig, ax = plt.subplots(figsize = (10,5))
-    ax.plot(np.mean(y, axis = 0))
+    y_data = np.mean(y, axis = 0)
+    y_std = np.std(y,axis=0)/np.sqrt(len(y))
+    ax.plot(y_data)
+    ax.fill_between(np.linspace(1,len(y_data),len(y_data)), y_data-y_std, y_data + y_std, color='gray', alpha=0.2)
     plt.show()
 
-def hist(waveforms, ped_min=60, ped_max=180, sig_min=200, sig_max=400, histo_range= None, plot = True, name = None):
+def hist(waveforms, ped_min=50, ped_max= 450, sig_min= 500, sig_max=1400, external_value = False, bins = 200, histo_range= None, plot = False, name = None,title = None):
+    #mean_plot(waveforms)
+    while not external_value:
+        try:
+            ped_min,ped_max,sig_min,sig_max = [int(i) for i in input('set integration ranges: <ped_min, ped_max, sig_min, sig_max>\n').split(', ')]
+            if ped_min<0 or ped_max<0 or sig_min<0 or sig_max<0:
+                raise ValueError
+            break
+        except ValueError:
+            print('no valid input')
     ped_sig_ratio = (ped_max - ped_min) / (sig_max - sig_min)
-    pedestals = np.sum(waveforms[:, ped_min:ped_max], axis=1)
-    charges = (np.sum(waveforms[:, sig_min:sig_max], axis=1) - pedestals * ped_sig_ratio)
+    pedestals = np.sum(waveforms[:, ped_min:ped_max], axis=1) * ped_sig_ratio
+    charges = (np.sum(waveforms[:, sig_min:sig_max], axis=1))-pedestals
     if plot:
         fig, ax = plt.subplots(figsize= (10,5))
         ax.hist(charges, range=None, bins=200, log=True)
+        if not title == None:
+            plt.title(title)
         plt.show()
-        if not name == None :
-            fig.savefig(name)
-    return np.histogram(charges, range = histo_range, bins = 200)
+        if not name == None:
+            fig.savefig(name + '.pdf')
+    hi, bin_edges = np.histogram(charges, range = histo_range, bins = bins)
+    bin_edges = (bin_edges-(bin_edges[2]-bin_edges[1])/2)[:-1]
+    return hi, bin_edges
+
+def hist_fitter(hi, bin_edges, h_int):#input has to be from hist()
+    fitter = ChargeHistFitter()
+    fitter.pre_fit(bin_edges, hi)
+    fit_function = fitter.fit_pmt_resp_func(bin_edges,hi)
+    fitter.opt_ped_values
+    fitter.opt_spe_values
+    plt.semilogy(bin_edges, hi)
+    plt.plot(bin_edges,fitter.opt_prf_values)
+    plt.ylim(.1,1e5)
+    plt.show()
+    gain = fitter.popt_prf['spe_charge']*h_int/(50*e)
+    return gain
 
 def fit(x,y, p0 = [], plot = True):
     x = x[:-1]
