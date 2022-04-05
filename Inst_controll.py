@@ -34,14 +34,14 @@ class Osci(object):
 		'''Easy way to read'''
 		return self.visa_if.read(command)
 
-	def messung(self,Number_of_SEQuence = 500, Measurement_time = 1*10**-8,\
-		samplerate =  3.125*10**10, Max_Ampl = 1, vertical_delay = 125E-9,chanel = 'CH1'):
+	def messung(self,Number_of_SEQuence = 500, Measurement_time = 2*10**-7,\
+		samplerate =  3.125*10**10, Max_Ampl = 1, vertical_delay = -180e-9,chanel = 'CH1'):
 		'''Makes the nessesary configuration for measuring, and returns an 2D array of rawdata, and several parameters'''
 		self.write('HOR:MODE:SAMPLERate {}'.format(samplerate))#write the samplerate, problem is osci only uses specific values
 		time.sleep(.1)#sleep needed, otherwise sometimes one get the old samplerate
 		samplerate = float(self.query('HOR:MODE:SAMPLERate?'))#to get correct samplerate
 		points = int(Measurement_time*samplerate)# calculate the number of points
-		self.write('CH1:DESKEW {}'.format(vertical_delay))
+		#self.write('CH1:DESKEW {}'.format(vertical_delay))
 		self.write('ACQ:SEQuence:NUMSEQuence 1')#Sequenes do not work, therefore use numver of sequence = 1
 		self.write('ACQuire:MODe SAMPLE')
 		self.write('DISplay:WAVEform OFF')#for faster Measurement
