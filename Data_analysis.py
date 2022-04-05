@@ -76,14 +76,16 @@ def gauss(x,mu,sigma,a):
     ''' A function with a normal distribution'''
     return a*np.exp(-(x-mu)**2/(2*sigma**2))/(np.sqrt(2*np.pi)*sigma)
 
-def x_y_values(data,  y_off, YMULT, Measurement_time = None, samplerate = None):
+def x_y_values(data,  y_off, YMULT, Measurement_time = None, samplerate = None, h_int = None):
     '''Method to get the x and y values from rawdata'''
     if not Measurement_time == None:
         x = np.linspace(0,Measurement_time,len(data[0,:]))
     elif not samplerate == None:
         x = np.linspace(0,len(data[0,:])/samplerate,len(data[0,:]))
+    elif not h_int == None:
+        x = np.linspace(0,len(data[0,:])*h_int,len(data[0,:]))
     else:
-        raise AttributeError('Either Measurement_time or samplerate must not be None')
+        raise AttributeError('Either Measurement_time or samplerate or h_int must not be None')
     y = (data)*YMULT+y_off
     return x,y
 
@@ -128,7 +130,9 @@ def hist(waveforms, ped_min=50, ped_max= 550, sig_min= 650, sig_max=1300, bins =
     charges = (np.sum(waveforms[:, sig_min:sig_max], axis=1))-pedestals
     if plot:
         fig, ax = plt.subplots(figsize= (10,5))
-        ax.hist(charges, range=None, bins=200, log=True)
+        range = (np.min(charges),np.max(charges))
+        ax.hist(charges, range=range, bins=200, log=True,color = 'b')
+        ax.hist(pedestals, range=range, bins=200, log=True,color = 'r')
         if not title == None:
             plt.title(title)
         plt.show()
@@ -150,7 +154,8 @@ def hist_fitter(hi, bin_edges, h_int):#input has to be from hist()
     plt.ylim(.1,1e5)
     plt.show()
     gain = fitter.popt_prf['spe_charge']*h_int/(50*e)
-    return gain
+    nphe = fitter.popt_prf['nphe']
+    return gain, nphe
 
 def fit(x,y, p0 = [], plot = True):
     x = x[:-1]
