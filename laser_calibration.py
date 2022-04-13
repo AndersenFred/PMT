@@ -6,8 +6,6 @@ from scipy.optimize import curve_fit as curve_fit
 def gauss(x,mu,sigma,a):
     return a*np.exp(-(x-mu)**2/(2*sigma**2))/(np.sqrt(2*np.pi)*sigma)
 try:
-    SerialNumber = sys.argv[3]
-    SN = int(sys.argv[1])
     HV = int(sys.argv[2])
 except IndexError:
     print('usage: python {} <serial number> <high voltage>'.format(sys.argv[0]))
@@ -16,7 +14,7 @@ except TypeError:
     print('usage: python {} <serial number> <high voltage>'.format(sys.argv[0]))
     sys.exit()
 
-h5_filename = 'Laser_Transit_Spread/Laser_kallibrierung_{}_{}'.format(HV,SN)
+h5_filename = 'Laser_Transit_Spread/Laser_kallibrierung_{}'.format(HV)
 y_values, Measurement_time, YOFF, YMU, samplerate, HV = data.values(filename = '{}.h5'.format(h5_filename))
 x,y = data.x_y_values(y_values, Measurement_time, YOFF, YMU, samplerate)
 #print(y.shape)
@@ -38,6 +36,6 @@ ax.set_xlabel('time in ns')
 
 ax.legend()
 print(1-len(j)/len(y[0,:]))
-fig.savefig('Laser_Transit_Spread/Laser_new_transit_time_spread_{}.pdf'.format(SN))
-data.log_transit_spread(SN=SN,n=len(j),N=len(y[0,:]),bins=bins, binwidth = '{}ns'.format((x[1]-x[0])),p0=p,cov=cov)
+fig.savefig('Laser_Transit_Spread/Laser_new_transit_time_spread_{}.pdf'.format(HV))
+data.log_transit_spread(n=len(j),N=len(y[0,:]),bins=bins, binwidth = '{}ns'.format((x[1]-x[0])),p0=p,cov=cov)
 plt.show()
