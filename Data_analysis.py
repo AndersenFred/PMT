@@ -30,7 +30,7 @@ class WavesetReader:
             Measurement_time = f[f"{key}/waveform_info/Measurement_time"][()]
             y_off = f[f"{key}/waveform_info/y_off"][()]
             try:
-                fit_results = (f[key]['fit_results']['gain'][()],f[key]['fit_results']['nphe'][()],f[key]['fit_results']['gain_err'][()])
+                fit_results = (f[key]['fit_results']['gain'][()],f[key]['fit_results']['nphe'][()],f[key]['fit_results']['gain_err'][()],f[key]['fit_results']['int_ranges'][()])
             except KeyError:
                 fit_results = None
         return Waveset(raw_waveforms, v_gain, h_int,Measurement_time,y_off, fit_results = fit_results)
@@ -76,12 +76,13 @@ def save_rawdata_to_file( h5_filename, data, Measurement_time, y_off, YMULT, sam
     f.close()
     return i
 
-def add_fit_results(h5_filename, HV, gain, nphe, gain_err):
+def add_fit_results(h5_filename, HV, gain, nphe, gain_err, int_ranges):
     with h5py.File(h5_filename, "a") as f:
         fit_results = f.create_group(f"{HV}/fit_results")
         fit_results["nphe"] = nphe
         fit_results["gain"] = gain
         fit_results["gain_err"] = gain_err
+        fit_results["int_ranges"] = int_ranges
         f.close()
 
 def doppel_gauss(x,mu_1,sig_1,ampl_1,mu_2,sig_2,ampl_2):
@@ -158,7 +159,7 @@ def hist(waveforms, ped_min=400, ped_max= 550, sig_min= 590, sig_max=800, bins =
             fig.savefig(name + '.pdf')
     hi, bin_edges = np.histogram(charges, range = histo_range, bins = bins)
     bin_edges = (bin_edges-(bin_edges[1])/2)[:-1]
-    return hi, bin_edges
+    return hi, bin_edges, np.array([ped_min,ped_max,sig_min,sig_max])
 
 def hist_fitter(hi, bin_edges, h_int):#input has to be from hist()
     fitter = ChargeHistFitter()
@@ -217,6 +218,7 @@ def analysis_complete_data(h5_filename,nom_manuf_hv,reanalyse= False, saveresult
     gains = []
     nphes = []
     gain_errs = []
+    int_range = []
     for key in f.wavesets:
         waveset = f[key]
         hv.append(int(key.split('_')[0]))
@@ -225,10 +227,13 @@ def analysis_complete_data(h5_filename,nom_manuf_hv,reanalyse= False, saveresult
             gains.append(waveset.fit_results[0])
             nphes.append(waveset.fit_results[1])
             gain_errs.append(waveset.fit_results[2])
+            int_range.append(waveset.fit_results[3])
+
         else:
             waveforms = waveset.waveforms
             h_int = waveset.h_int
-            y,x = hist(waveforms, plot = True)
+            y,x, int_ranges = hist(waveforms, plot = True)
+            int_range.append(int_ranges)
             gain, nphe, gain_err = hist_fitter(y,x,h_int)
             if saveresults:
                 add_fit_results(h5_filename = h5_filename, HV = key, gain = gain, nphe = nphe, gain_err = gain_err)
@@ -260,16 +265,13 @@ def analysis_complete_data(h5_filename,nom_manuf_hv,reanalyse= False, saveresult
     ax.plot(xs, linear(xs, *p_opt))
     plt.axis([hv_min, hv_max, gain_min, gain_max])
     plt.xlabel("log10(HV)")
-    plt.ylabel("log10(gain)")
-    fig.savefig('plot.pdf')
     plt.show()
-    print(p_opt)
-    print(np.sqrt(np.diag(cov)))
+    log_complete_data(name = h5_filename, gains=gains, gain_errs = gain_errs, nphe = nphes,int_ranges = int_ranges,h_int = h_int, p_opt = p_opt, cov = cov,nominal_gain = nominal_gains, nominal_hv = nominal_hvs)
     return gains, nphes, hv, gain_errs
 
-def log_complete_data(name, hvs, gains, gain_errs, nphe, p_opt, cov, opt_hv):
-    name = '{}.txt'.format(name)
+def log_complete_data(name, hvs, gains, gain_errs, nphe,int_ranges,h_int, p_opt, cov,nominal_gain, nominal_hv):
+    name = '{}_log.txt'.format(name)
     f = open(name, 'a')
-    text = f'Date = {datetime.now()}\n HV: {hvs}\n gains: {gains}\n gain_errs: {gain_errs}\n nphe: {nphe}'
+    text = f'Date = {datetime.now()}\n HV: {hvs}\n gains: {gains}\n gain_errs: {gain_errs}\n nphes: {nphe}\n int ranges: {int_ranges}; {int_ranges*h_int}\n integration time {(int_ranges[3]-int_ranges[2])*i_int}\n fit results: {p_opt}\n cov: {cov}\n nominal gain: {nominal_gain}\n nominal hv: {nominal_hv}'
     f.write(text)
     f.close()
