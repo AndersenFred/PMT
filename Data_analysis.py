@@ -10,9 +10,10 @@ from scipy.optimize import curve_fit as curve_fit
 from peeemtee.pmt_resp_func import ChargeHistFitter
 
 class WavesetReader:
-    def __init__(self, filename):
-        self.filename = filename
+    def __init__(self, h5_filename):
+        self.filename = h5_filename
         self._wavesets = None
+        self._keys = None
 
     @property
     def wavesets(self):
@@ -28,10 +29,16 @@ class WavesetReader:
             h_int = f[f"{key}/waveform_info/h_int"][()]
             Measurement_time = f[f"{key}/waveform_info/Measurement_time"][()]
             y_off = f[f"{key}/waveform_info/y_off"][()]
-        return Waveset(raw_waveforms, v_gain, h_int,Measurement_time,y_off)
+            try:
+                fit_results = (f[key]['fit_results']['gain'][()],f[key]['fit_results']['nphe'][()],f[key]['fit_results']['gain_err'][()])
+            except KeyError:
+                fit_results = None
+        return Waveset(raw_waveforms, v_gain, h_int,Measurement_time,y_off, fit_results = fit_results)
+def linear(x,m,t):
+    return m*x+t
 
 class Waveset:
-    def __init__(self, raw_waveforms, v_gain, h_int,Measurement_time, y_off):
+    def __init__(self, raw_waveforms, v_gain, h_int,Measurement_time, y_off, fit_results = None):
         self.raw_waveforms = raw_waveforms
         self.v_gain = v_gain
         self.h_int = h_int
@@ -39,6 +46,8 @@ class Waveset:
         self.samplerate = 1/h_int
         self.y_off = y_off
         self._waveforms = None
+        self.fit_results = fit_results
+
 
     @property
     def waveforms(self):
@@ -49,8 +58,8 @@ class Waveset:
     def zeroed_waveforms(self, baseline_min, baseline_max):
         return (self.waveforms.T- np.mean(self.waveforms[:, baseline_min:baseline_max], axis=1)).T
 
-def save_rawdata_to_file(h5_filename, data, Measurement_time, y_off, YMULT, samplerate, HV):
-    f = h5py.File(f'{h5_filename}.h5', 'a')
+def save_rawdata_to_file( h5_filename, data, Measurement_time, y_off, YMULT, samplerate, HV):
+    f = h5py.File(f'{ h5_filename}.h5', 'a')
     i=0
     while(True):
         try:
@@ -65,7 +74,15 @@ def save_rawdata_to_file(h5_filename, data, Measurement_time, y_off, YMULT, samp
     wf_info["Measurement_time"] = Measurement_time
     wf_info["y_off"] = y_off
     f.close()
+    return i
 
+def add_fit_results(h5_filename, HV, gain, nphe, gain_err):
+    with h5py.File(h5_filename, "a") as f:
+        fit_results = f.create_group(f"{HV}/fit_results")
+        fit_results["nphe"] = nphe
+        fit_results["gain"] = gain
+        fit_results["gain_err"] = gain_err
+        f.close()
 
 def doppel_gauss(x,mu_1,sig_1,ampl_1,mu_2,sig_2,ampl_2):
     '''A function with two normal distributions'''
@@ -103,7 +120,7 @@ def plot(x,y,figsize = (10,5), index = False):
         x = np.linspace(1,len(y),len(y))
     fig, ax = plt.subplots(figsize = figsize)
     ax.plot(x,y)
-    plt.show()
+    plt.show(block = False)
 
 def mean_plot(y, int_ranges = (60, 180, 200, 350)):
     fig, ax = plt.subplots(figsize = (10,5))
@@ -114,9 +131,9 @@ def mean_plot(y, int_ranges = (60, 180, 200, 350)):
     y_std = np.std(y,axis=0)/np.sqrt(len(y))
     ax.plot(y_data)
     ax.fill_between(np.linspace(1,len(y_data),len(y_data)), y_data-y_std, y_data + y_std, color='gray', alpha=0.2)
-    plt.show()
+    plt.show(block = False)
 
-def hist(waveforms, ped_min=50, ped_max= 550, sig_min= 650, sig_max=1300, bins = 200, histo_range= None, plot = False, name = None,title = None):
+def hist(waveforms, ped_min=400, ped_max= 550, sig_min= 590, sig_max=800, bins = 200, histo_range= None, plot = False, name = None,title = None):
     int_ranges = (ped_min, ped_max, sig_min, sig_max)
     mean_plot(waveforms,int_ranges)
     try:
@@ -152,10 +169,11 @@ def hist_fitter(hi, bin_edges, h_int):#input has to be from hist()
     plt.semilogy(bin_edges, hi)
     plt.plot(bin_edges,fitter.opt_prf_values)
     plt.ylim(.1,1e5)
-    plt.show()
+    plt.show(block = False)
     gain = fitter.popt_prf['spe_charge']*h_int/(50*e)
     nphe = fitter.popt_prf['nphe']
-    return gain, nphe
+    gain_err = np.sqrt(fitter.pcov_prf['spe_charge', 'spe_charge'])*h_int/(50*e)
+    return gain, nphe, gain_err
 
 def fit(x,y, p0 = [], plot = True):
     x = x[:-1]
@@ -175,6 +193,7 @@ def transit_time_spread(waveforms,threshold=0.01):
                 k.append(j)
                 break
     return k
+
 def transit_time_spread_Testdaten(waveforms,threshold=0.008):
     k = []
     for i in range(len(waveforms[:,0])):
@@ -188,5 +207,69 @@ def log_transit_spread(name,SN,n,N,bins,binwidth,p0,cov):
     name = '{}.txt'.format(name)
     f = open(name, 'a')
     text = 'Date = {8},\n n_triggerd = {0}\n N = {1}\n Number Photoelektrons = {2}\n Histparameter:\n bins = {3}, binwidth = {4},\n Fitparameter: mu[ns], sigma[ns], Ampl= {5},\n Delta_mu, Delta_sigma, delta_Ampl = {6},\n cov =\n {7}\n\n'.format(n,N,-np.log(1-n/N),bins,binwidth,p0,np.sqrt(np.diag(cov)),cov,datetime.now(),SN)
+    f.write(text)
+    f.close()
+
+
+def analysis_complete_data(h5_filename,nom_manuf_hv,reanalyse= False, saveresults = True, nominal_gains = [3e6], SN = 'AB2363'):
+    f = WavesetReader(h5_filename)
+    hv = []
+    gains = []
+    nphes = []
+    gain_errs = []
+    for key in f.wavesets:
+        waveset = f[key]
+        hv.append(int(key.split('_')[0]))
+        if not reanalyse and not waveset.fit_results == None:
+            waveset = f[key]
+            gains.append(waveset.fit_results[0])
+            nphes.append(waveset.fit_results[1])
+            gain_errs.append(waveset.fit_results[2])
+        else:
+            waveforms = waveset.waveforms
+            h_int = waveset.h_int
+            y,x = hist(waveforms, plot = True)
+            gain, nphe, gain_err = hist_fitter(y,x,h_int)
+            if saveresults:
+                add_fit_results(h5_filename = h5_filename, HV = key, gain = gain, nphe = nphe, gain_err = gain_err)
+            gains.append(gain)
+            nphes.append(nphe)
+            gain_errs.append(gain_err)
+    p_opt, cov = curve_fit(linear, np.log10(hv), np.log10(gains), sigma = np.log10(gain_errs))
+    nominal_hvs = []
+    for nominal_gain in nominal_gains:
+        nominal_hvs.append(10**((np.log10(nominal_gain) - p_opt[1])/ p_opt[0]))
+    print(nominal_hvs)
+    manuf_gain=10**(np.log10(nom_manuf_hv)*p_opt[0] +p_opt[1])
+    fig, ax = plt.subplots(figsize = (10,5))
+    for i in range(len(nominal_hvs)):
+        ax.axhline(np.log10(nominal_gains[i]), color="black", ls="--")
+        ax.axvline(np.log10(nominal_hvs[i]), color="black", ls="--")
+    gains,gain_errs = np.array(gains), np.array(gain_errs)
+    gain_err_plus = np.log10(gains+gain_errs)-np.log10(gains)
+    gain_err_minus = np.log10(gains-gain_errs)-np.log10(gains)
+    ax.plot(np.log10(hv), np.log10(gains),'x')
+    print(np.log10(gains)/np.log10(gain_errs))
+    hv_min=np.log10(min(hv)-50)
+    hv_max=np.log10(max(hv)+50)
+    xs = np.linspace(hv_min, hv_max, 1000)
+    gain_min=hv_min*p_opt[0] +p_opt[1]
+    gain_max=hv_max*p_opt[0] +p_opt[1]
+    ax.vlines(x=np.log10(nom_manuf_hv), ymin=gain_min,ymax=np.log10(manuf_gain), colors="red", linestyles="dashed")
+    plt.title("gainslope "+SN)
+    ax.plot(xs, linear(xs, *p_opt))
+    plt.axis([hv_min, hv_max, gain_min, gain_max])
+    plt.xlabel("log10(HV)")
+    plt.ylabel("log10(gain)")
+    fig.savefig('plot.pdf')
+    plt.show()
+    print(p_opt)
+    print(np.sqrt(np.diag(cov)))
+    return gains, nphes, hv, gain_errs
+
+def log_complete_data(name, hvs, gains, gain_errs, nphe, p_opt, cov, opt_hv):
+    name = '{}.txt'.format(name)
+    f = open(name, 'a')
+    text = f'Date = {datetime.now()}\n HV: {hvs}\n gains: {gains}\n gain_errs: {gain_errs}\n nphe: {nphe}'
     f.write(text)
     f.close()
