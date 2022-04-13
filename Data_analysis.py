@@ -7,7 +7,7 @@ import scipy.constants
 from peeemtee.pmt_resp_func import ChargeHistFitter
 e = scipy.constants.e
 from scipy.optimize import curve_fit as curve_fit
-from peeemtee.pmt_resp_func import ChargeHistFitter
+
 
 class WavesetReader:
     def __init__(self, h5_filename):
