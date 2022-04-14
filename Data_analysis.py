@@ -286,19 +286,19 @@ def analysis_complete_data(h5_filename,nom_manuf_hv,reanalyse= False, saveresult
     plt.xlabel("log10(HV)")
     plt.ylabel("log10(gain)")
     plt.show()
-    log_complete_data(name = h5_filename,hvs = hv, gains=gains, gain_errs = gain_errs, nphe = nphes,int_ranges = np.array(int_range),h_int = h_int, p_opt = p_opt, cov = cov,nominal_gain = nominal_gains, nominal_hv = nominal_hvs)
-    print(f'nominal HV: {nominal_hvs} pm {err_hv(g = nominal_gains,cov = cov)} for nominal gain: {nominal_gains}')
+    err_nom_hv = err_hv(gain_nom = nominal_gain,gain = gains,gain_errs = gain_errs, hvs = hv)
+    log_complete_data(name = h5_filename,hvs = hv,err_nom_hv = err_nom_hv, gains=gains, gain_errs = gain_errs, nphe = nphes,int_ranges = np.array(int_range),h_int = h_int, p_opt = p_opt, cov = cov,nominal_gain = nominal_gains, nominal_hv = nominal_hvs)
+    print(f'nominal HV: {nominal_hvs} pm {err_nom_hv} for nominal gain: {nominal_gains}')
     return gains, nphes, hv, gain_errs
 
-def err_hv(g,cov):
-    delta_m, delta_t = np.diag(cov)
-    return 10**np.sqrt((np.log10(g)*delta_m)**2+delta_t**2)
+def err_hv(gain, gain_errs, gain_nom, hvs):
+    p_opt, cov = curve_fit(linear,hvs, np.log10(gain)-np.log10(gain_nom), sigma = np.log10(gain_errs))
+    return 10**np.sqrt(cov[1,1])
 
-def log_complete_data(name, hvs, gains, gain_errs, nphe,int_ranges,h_int, p_opt, cov,nominal_gain, nominal_hv):
+def log_complete_data(name, hvs, gains, gain_errs,err_nom_hv, nphe,int_ranges,h_int, p_opt, cov,nominal_gain, nominal_hv):
     name = '{}_log.txt'.format(name)
     f = open(name, 'a')
     int_time = (int_ranges[:,3]-int_ranges[:,2])*h_int*1e9
-    err_nom_hv = err_hv(g = nominal_gain,cov = cov)
     text = f'Date: {datetime.now()}\n HV: {hvs}\n gains: {gains}\n gain_errs: {gain_errs}\n nphes: {nphe}\n int ranges: {int_ranges};\n int_ranges in ns {int_ranges*h_int*1e9}\n integration time in ns {int_time}\n fit results: {p_opt}\n cov: {cov}\n nominal gain: {nominal_gain}\n nominal hv: {nominal_hv}pm{err_nom_hv}\n\n\n'
     f.write(text)
     f.close()
