@@ -85,6 +85,19 @@ def add_fit_results(h5_filename, HV, gain, nphe, gain_err, int_ranges):
         fit_results["int_ranges"] = int_ranges
         f.close()
 
+def rewrite_fit_results(h5_filename, HV, gain, nphe, gain_err, int_ranges):
+    with h5py.File(h5_filename, "r+") as f:
+        fit_results = f[f"{HV}/fit_results"]
+        del fit_results["nphe"]
+        fit_results["nphe"] = nphe
+        del fit_results["gain"]
+        fit_results["gain"] = gain
+        del fit_results["gain_err"]
+        fit_results["gain_err"] = gain_err
+        del fit_results["int_ranges"]
+        fit_results["int_ranges"] = int_ranges
+        f.close()
+
 def doppel_gauss(x,mu_1,sig_1,ampl_1,mu_2,sig_2,ampl_2):
     '''A function with two normal distributions'''
     return ampl_1/(np.sqrt(2*np.pi)*sig_1)*np.exp(-(x-mu_1)**2/(2*sig_1**2))\
@@ -127,6 +140,8 @@ def mean_plot(y, int_ranges = (60, 180, 200, 350)):
     fig, ax = plt.subplots(figsize = (10,5))
     ax.axvspan(int_ranges[0], int_ranges[1], facecolor="red", alpha=0.5)
     ax.axvspan(int_ranges[2], int_ranges[3], facecolor="green", alpha=0.5)
+    plt.xlabel("time in sample")
+    plt.ylabel("Voltage in V")
     plt.title("mean waveform")
     y_data = np.mean(y, axis = 0)
     y_std = np.std(y,axis=0)/np.sqrt(len(y))
@@ -134,7 +149,7 @@ def mean_plot(y, int_ranges = (60, 180, 200, 350)):
     ax.fill_between(np.linspace(1,len(y_data),len(y_data)), y_data-y_std, y_data + y_std, color='gray', alpha=0.2)
     plt.show(block = False)
 
-def hist(waveforms, ped_min=400, ped_max= 550, sig_min= 590, sig_max=800, bins = 200, histo_range= None, plot = False, name = None,title = None):
+def hist(waveforms, ped_min=430, ped_max= 550, sig_min= 590, sig_max=790, bins = 200, histo_range= None, plot = False, name = None,title = None):
     int_ranges = (ped_min, ped_max, sig_min, sig_max)
     mean_plot(waveforms,int_ranges)
     try:
@@ -144,13 +159,15 @@ def hist(waveforms, ped_min=400, ped_max= 550, sig_min= 590, sig_max=800, bins =
     except ValueError:
         print(f'ValueError: used integration ranges {int_ranges}')
     ped_sig_ratio = (ped_max - ped_min) / (sig_max - sig_min)
-    pedestals = np.sum(waveforms[:, ped_min:ped_max], axis=1) * ped_sig_ratio
+    pedestals = (np.sum(waveforms[:, ped_min:ped_max], axis=1)) * ped_sig_ratio
     charges = (np.sum(waveforms[:, sig_min:sig_max], axis=1))-pedestals
     if plot:
         fig, ax = plt.subplots(figsize= (10,5))
         range = (np.min(charges),np.max(charges))
         ax.hist(charges, range=range, bins=200, log=True,color = 'b')
         ax.hist(pedestals, range=range, bins=200, log=True,color = 'r')
+        plt.xlabel("Number of Photoelektrons")
+        plt.ylabel("Number of events")
         if not title == None:
             plt.title(title)
         plt.show()
@@ -225,18 +242,20 @@ def analysis_complete_data(h5_filename,nom_manuf_hv,reanalyse= False, saveresult
         if not reanalyse and not waveset.fit_results == None:
             waveset = f[key]
             gains.append(waveset.fit_results[0])
+            h_int = waveset.h_int
             nphes.append(waveset.fit_results[1])
             gain_errs.append(waveset.fit_results[2])
-            int_range.append(waveset.fit_results[3])
-
+            int_range.append(np.array(waveset.fit_results[3]))
         else:
             waveforms = waveset.waveforms
             h_int = waveset.h_int
             y,x, int_ranges = hist(waveforms, plot = True)
             int_range.append(int_ranges)
             gain, nphe, gain_err = hist_fitter(y,x,h_int)
-            if saveresults:
-                add_fit_results(h5_filename = h5_filename, HV = key, gain = gain, nphe = nphe, gain_err = gain_err)
+            if reanalyse and saveresults:
+                rewrite_fit_results(h5_filename = h5_filename, HV = key, gain = gain, nphe = nphe, gain_err = gain_err, int_ranges = int_ranges)
+            elif saveresults:
+                add_fit_results(h5_filename = h5_filename, HV = key, gain = gain, nphe = nphe, gain_err = gain_err, int_ranges = int_ranges)
             gains.append(gain)
             nphes.append(nphe)
             gain_errs.append(gain_err)
@@ -244,7 +263,7 @@ def analysis_complete_data(h5_filename,nom_manuf_hv,reanalyse= False, saveresult
     nominal_hvs = []
     for nominal_gain in nominal_gains:
         nominal_hvs.append(10**((np.log10(nominal_gain) - p_opt[1])/ p_opt[0]))
-    print(nominal_hvs)
+    #print(nominal_hvs)
     manuf_gain=10**(np.log10(nom_manuf_hv)*p_opt[0] +p_opt[1])
     fig, ax = plt.subplots(figsize = (10,5))
     for i in range(len(nominal_hvs)):
@@ -254,7 +273,7 @@ def analysis_complete_data(h5_filename,nom_manuf_hv,reanalyse= False, saveresult
     gain_err_plus = np.log10(gains+gain_errs)-np.log10(gains)
     gain_err_minus = np.log10(gains-gain_errs)-np.log10(gains)
     ax.plot(np.log10(hv), np.log10(gains),'x')
-    print(np.log10(gains)/np.log10(gain_errs))
+    #print(np.log10(gains)/np.log10(gain_errs))
     hv_min=np.log10(min(hv)-50)
     hv_max=np.log10(max(hv)+50)
     xs = np.linspace(hv_min, hv_max, 1000)
@@ -265,13 +284,21 @@ def analysis_complete_data(h5_filename,nom_manuf_hv,reanalyse= False, saveresult
     ax.plot(xs, linear(xs, *p_opt))
     plt.axis([hv_min, hv_max, gain_min, gain_max])
     plt.xlabel("log10(HV)")
+    plt.ylabel("log10(gain)")
     plt.show()
-    log_complete_data(name = h5_filename, gains=gains, gain_errs = gain_errs, nphe = nphes,int_ranges = int_ranges,h_int = h_int, p_opt = p_opt, cov = cov,nominal_gain = nominal_gains, nominal_hv = nominal_hvs)
+    log_complete_data(name = h5_filename,hvs = hv, gains=gains, gain_errs = gain_errs, nphe = nphes,int_ranges = np.array(int_range),h_int = h_int, p_opt = p_opt, cov = cov,nominal_gain = nominal_gains, nominal_hv = nominal_hvs)
+    print(f'nominal HV: {nominal_hvs} pm {err_hv(g = nominal_gains,cov = cov)} for nominal gain: {nominal_gains}')
     return gains, nphes, hv, gain_errs
+
+def err_hv(g,cov):
+    delta_m, delta_t = np.diag(cov)
+    return 10**np.sqrt((np.log10(g)*delta_m)**2+delta_t**2)
 
 def log_complete_data(name, hvs, gains, gain_errs, nphe,int_ranges,h_int, p_opt, cov,nominal_gain, nominal_hv):
     name = '{}_log.txt'.format(name)
     f = open(name, 'a')
-    text = f'Date = {datetime.now()}\n HV: {hvs}\n gains: {gains}\n gain_errs: {gain_errs}\n nphes: {nphe}\n int ranges: {int_ranges}; {int_ranges*h_int}\n integration time {(int_ranges[3]-int_ranges[2])*i_int}\n fit results: {p_opt}\n cov: {cov}\n nominal gain: {nominal_gain}\n nominal hv: {nominal_hv}'
+    int_time = (int_ranges[:,3]-int_ranges[:,2])*h_int*1e9
+    err_nom_hv = err_hv(g = nominal_gain,cov = cov)
+    text = f'Date: {datetime.now()}\n HV: {hvs}\n gains: {gains}\n gain_errs: {gain_errs}\n nphes: {nphe}\n int ranges: {int_ranges};\n int_ranges in ns {int_ranges*h_int*1e9}\n integration time in ns {int_time}\n fit results: {p_opt}\n cov: {cov}\n nominal gain: {nominal_gain}\n nominal hv: {nominal_hv}pm{err_nom_hv}\n\n\n'
     f.write(text)
     f.close()
