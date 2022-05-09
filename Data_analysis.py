@@ -293,7 +293,7 @@ def analysis_complete_data(h5_filename,nom_manuf_hv,reanalyse= False, saveresult
 
 def err_hv(gain, gain_errs, gain_nom, hvs):
     p_opt, cov = curve_fit(linear,hvs, np.log10(gain)-np.log10(gain_nom), sigma = np.log10(gain_errs))
-    return 10**np.sqrt(cov[1,1])
+    return 10**p_opt(1)*np.sqrt(cov[1,1])
 
 def log_complete_data(name, hvs, gains, gain_errs,err_nom_hv, nphe,int_ranges,h_int, p_opt, cov,nominal_gain, nominal_hv):
     name = '{}_log.txt'.format(name)
