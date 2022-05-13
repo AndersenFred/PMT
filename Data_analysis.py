@@ -6,6 +6,7 @@ from datetime import datetime
 import scipy.constants
 from peeemtee.pmt_resp_func import ChargeHistFitter
 e = scipy.constants.e
+import time
 from scipy.optimize import curve_fit as curve_fit
 
 
@@ -59,7 +60,7 @@ class Waveset:
         return (self.waveforms.T- np.mean(self.waveforms[:, baseline_min:baseline_max], axis=1)).T
 
 def save_rawdata_to_file( h5_filename, data, Measurement_time, y_off, YMULT, samplerate, HV):
-    f = h5py.File(f'{ h5_filename}.h5', 'a')
+    f = h5py.File(h5_filename, 'a')
     i=0
     while(True):
         try:
@@ -98,15 +99,6 @@ def rewrite_fit_results(h5_filename, HV, gain, nphe, gain_err, int_ranges):
         fit_results["int_ranges"] = int_ranges
         f.close()
 
-def doppel_gauss(x,mu_1,sig_1,ampl_1,mu_2,sig_2,ampl_2):
-    '''A function with two normal distributions'''
-    return ampl_1/(np.sqrt(2*np.pi)*sig_1)*np.exp(-(x-mu_1)**2/(2*sig_1**2))\
-    +ampl_2/(np.sqrt(2*np.pi)*sig_2)*np.exp(-(x-mu_2)**2/(2*sig_2**2))
-
-def gauss(x,mu,sigma,a):
-    ''' A function with a normal distribution'''
-    return a*np.exp(-(x-mu)**2/(2*sigma**2))/(np.sqrt(2*np.pi)*sigma)
-
 def x_y_values(data,  y_off, YMULT, Measurement_time = None, samplerate = None, h_int = None):
     '''Method to get the x and y values from rawdata'''
     if not Measurement_time == None:
@@ -120,21 +112,6 @@ def x_y_values(data,  y_off, YMULT, Measurement_time = None, samplerate = None, 
     y = (data)*YMULT+y_off
     return x,y
 
-def numinteg(x,y):
-    '''simple Method for numeric integration'''
-    return np.sum((x[1]-x[0])*y)
-
-def number_of_electrons(x,y,R=50):
-    '''simple Method for estimating the number of electrons passing the oszi'''
-    return numinteg(x,y)*R/e
-
-def plot(x,y,figsize = (10,5), index = False):
-    '''plot for lazy people'''
-    if (not index):
-        x = np.linspace(1,len(y),len(y))
-    fig, ax = plt.subplots(figsize = figsize)
-    ax.plot(x,y)
-    plt.show(block = False)
 
 def mean_plot(y, int_ranges = (60, 180, 200, 350)):
     fig, ax = plt.subplots(figsize = (10,5))
@@ -149,15 +126,36 @@ def mean_plot(y, int_ranges = (60, 180, 200, 350)):
     ax.fill_between(np.linspace(1,len(y_data),len(y_data)), y_data-y_std, y_data + y_std, color='gray', alpha=0.2)
     plt.show(block = False)
 
-def hist(waveforms, ped_min=430, ped_max= 550, sig_min= 590, sig_max=790, bins = 200, histo_range= None, plot = False, name = None,title = None):
+def hist_variable_values(waveforms, ped_min, ped_max, sig_min, sig_max_start,h_int, interval = 10, number = 10):
+    gains = []
+    gain_errs = []
+    sig_end = []
+    for i in range(number):
+        try:
+            x,y, int_ranges = histogramm(waveforms, ped_min, ped_max, sig_min, sig_max_start+interval*i)
+            gain, nphe, gain_err = hist_fitter(x,y,h_int, plot = False)
+            print(gain)
+            gains.append(gain)
+            sig_end.append(sig_max_start+interval*i)
+            gain_errs.append(gain_err)
+        except ValueError:
+            continue
+        except TypeError:
+            continue
+    return np.array(gains), np.array(sig_end), np.array(gain_errs)
+
+def hist(waveforms, ped_min=0, ped_max= 100, sig_min= 190, sig_max=400, bins = 200, histo_range= None, plot = False, name = None,title = None):
     int_ranges = (ped_min, ped_max, sig_min, sig_max)
     mean_plot(waveforms,int_ranges)
     try:
-        ped_min,ped_max,sig_min,sig_max = [int(i) for i in input('set integration ranges: <ped_min, ped_max, sig_min, sig_max>\n').split(', ')]
+        ped_min, ped_max, sig_min, sig_max = [int(i) for i in input('set integration ranges: <ped_min, ped_max, sig_min, sig_max>\n').split(', ')]
         if ped_min<0 or ped_max<0 or sig_min<0 or sig_max<0:
             raise ValueError
     except ValueError:
         print(f'ValueError: used integration ranges {int_ranges}')
+    return histogramm(waveforms, ped_min, ped_max, sig_min, sig_max, bins, histo_range, plot, name, title)
+
+def histogramm(waveforms, ped_min=0, ped_max= 100, sig_min= 190, sig_max=400, bins = 200, histo_range= None, plot = False, name = None,title = None):
     ped_sig_ratio = (ped_max - ped_min) / (sig_max - sig_min)
     pedestals = (np.sum(waveforms[:, ped_min:ped_max], axis=1)) * ped_sig_ratio
     charges = (np.sum(waveforms[:, sig_min:sig_max], axis=1))-pedestals
@@ -178,16 +176,17 @@ def hist(waveforms, ped_min=430, ped_max= 550, sig_min= 590, sig_max=790, bins =
     bin_edges = (bin_edges-(bin_edges[1])/2)[:-1]
     return hi, bin_edges, np.array([ped_min,ped_max,sig_min,sig_max])
 
-def hist_fitter(hi, bin_edges, h_int):#input has to be from hist()
+def hist_fitter(hi, bin_edges, h_int, plot = True):#input has to be from hist()
     fitter = ChargeHistFitter()
     fitter.pre_fit(bin_edges, hi)
     fit_function = fitter.fit_pmt_resp_func(bin_edges,hi)
     fitter.opt_ped_values
     fitter.opt_spe_values
-    plt.semilogy(bin_edges, hi)
-    plt.plot(bin_edges,fitter.opt_prf_values)
-    plt.ylim(.1,1e5)
-    plt.show(block = False)
+    if (plot):
+        plt.semilogy(bin_edges, hi)
+        plt.plot(bin_edges,fitter.opt_prf_values)
+        plt.ylim(.1,1e5)
+        plt.show(block = False)
     gain = fitter.popt_prf['spe_charge']*h_int/(50*e)
     nphe = fitter.popt_prf['nphe']
     gain_err = np.sqrt(fitter.pcov_prf['spe_charge', 'spe_charge'])*h_int/(50*e)
@@ -257,6 +256,7 @@ def analysis_complete_data(h5_filename,nom_manuf_hv,reanalyse= False, saveresult
             elif saveresults:
                 add_fit_results(h5_filename = h5_filename, HV = key, gain = gain, nphe = nphe, gain_err = gain_err, int_ranges = int_ranges)
             gains.append(gain)
+            print(gain)
             nphes.append(nphe)
             gain_errs.append(gain_err)
     p_opt, cov = curve_fit(linear, np.log10(hv), np.log10(gains), sigma = np.log10(gain_errs))
@@ -269,11 +269,11 @@ def analysis_complete_data(h5_filename,nom_manuf_hv,reanalyse= False, saveresult
     for i in range(len(nominal_hvs)):
         ax.axhline(np.log10(nominal_gains[i]), color="black", ls="--")
         ax.axvline(np.log10(nominal_hvs[i]), color="black", ls="--")
-    gains,gain_errs = np.array(gains), np.array(gain_errs)
-    gain_err_plus = np.log10(gains+gain_errs)-np.log10(gains)
-    gain_err_minus = np.log10(gains-gain_errs)-np.log10(gains)
+    #gains,gain_errs = np.array(gains), np.array(gain_errs)
+    #gain_err_plus = np.log10(gains+gain_errs)-np.log10(gains)
+    #gain_err_minus = np.log10(gains-gain_errs)-np.log10(gains)
     ax.plot(np.log10(hv), np.log10(gains),'x')
-    #print(np.log10(gains)/np.log10(gain_errs))
+    #print(np.log10(gains)-np.log10(gain_errs))
     hv_min=np.log10(min(hv)-50)
     hv_max=np.log10(max(hv)+50)
     xs = np.linspace(hv_min, hv_max, 1000)
@@ -293,12 +293,15 @@ def analysis_complete_data(h5_filename,nom_manuf_hv,reanalyse= False, saveresult
 
 def err_hv(gain, gain_errs, gain_nom, hvs):
     p_opt, cov = curve_fit(linear,hvs, np.log10(gain)-np.log10(gain_nom), sigma = np.log10(gain_errs))
-    return 10**p_opt(1)*np.sqrt(cov[1,1])
+    return 10**np.sqrt(cov[1,1])
 
 def log_complete_data(name, hvs, gains, gain_errs,err_nom_hv, nphe,int_ranges,h_int, p_opt, cov,nominal_gain, nominal_hv):
     name = '{}_log.txt'.format(name)
     f = open(name, 'a')
     int_time = (int_ranges[:,3]-int_ranges[:,2])*h_int*1e9
-    text = f'Date: {datetime.now()}\n HV: {hvs}\n gains: {gains}\n gain_errs: {gain_errs}\n nphes: {nphe}\n int ranges: {int_ranges};\n int_ranges in ns {int_ranges*h_int*1e9}\n integration time in ns {int_time}\n fit results: {p_opt}\n cov: {cov}\n nominal gain: {nominal_gain}\n nominal hv: {nominal_hv}pm{err_nom_hv}\n\n\n'
+    gains = [np.format_float_scientific(i,4) for i in gains]
+    gain_errs = [np.format_float_scientific(i,2) for i in gain_errs]
+
+    text = f'Date: {datetime.now()}\n HV: {hvs}\n gains: {gains}\n gain_errs: {gain_errs}\n nphes: {np.round(nphe,2)}\n int ranges: {int_ranges};\n int_ranges in ns {int_ranges*h_int*1e9}\n integration time in ns {int_time}\n fit results: {np.round(p_opt,4)}\n cov: {np.round(cov,4)}\n nominal gain: {nominal_gain}\n nominal hv: {np.round(nominal_hv,0)}pm{np.round(err_nom_hv,2)}\n\n\n'
     f.write(text)
     f.close()
