@@ -126,7 +126,7 @@ def mean_plot(y, int_ranges = (60, 180, 200, 350)):
     ax.fill_between(np.linspace(1,len(y_data),len(y_data)), y_data-y_std, y_data + y_std, color='gray', alpha=0.2)
     plt.show(block = False)
 
-def hist_variable_values(waveforms, ped_min, ped_max, sig_min, sig_max_start,h_int, interval = 10, number = 10):
+def hist_variable_sig_max(waveforms, ped_min, ped_max, sig_min, sig_max_start,h_int, interval = 10, number = 10):
     gains = []
     gain_errs = []
     sig_end = []
@@ -143,6 +143,56 @@ def hist_variable_values(waveforms, ped_min, ped_max, sig_min, sig_max_start,h_i
         except TypeError:
             continue
     return np.array(gains), np.array(sig_end), np.array(gain_errs)
+
+def hist_variable_sig_min(waveforms, ped_min, ped_max, sig_min_start, sig_max,h_int, interval = 10, number = 10):
+    gains = []
+    gain_errs = []
+    sig_end = []
+    for i in range(number):
+        try:
+            x,y, int_ranges = histogramm(waveforms, ped_min, ped_max, sig_min_start-interval*i, sig_max)
+            gain, nphe, gain_err = hist_fitter(x,y,h_int, plot = False)
+            print(gain)
+            gains.append(gain)
+            sig_end.append(sig_min_start-interval*i)
+            gain_errs.append(gain_err)
+        except ValueError:
+            continue
+        except TypeError:
+            continue
+    return np.array(gains), np.array(sig_end), np.array(gain_errs)
+
+
+def hist_variable_values(waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h_int, interval_sig_min = 10,interval_sig_max = 10, number_sig_min = 10, number_sig_max = 10):
+    gains = np.zeros((number_sig_min, number_sig_max))
+    sig_min = np.linspace(sig_min_start-number_sig_min*interval_sig_min, sig_min_start, number_sig_min)
+    sig_max = np.linspace(sig_max_start, sig_max_start+interval_sig_max*number_sig_max, number_sig_max)
+    for i in range(number_sig_min):
+        for j in range(number_sig_max):
+            try:
+                x,y, int_ranges = histogramm(waveforms, ped_min, ped_max, sig_min_start-interval_sig_min*i, sig_max_start+interval_sig_max*j)
+                gain, nphe, gain_err = hist_fitter(x,y,h_int, plot = False)
+                gains[i,j] = gain
+            except ValueError:
+                gains[i,j] = None
+                continue
+            except TypeError:
+                gains[i,j] = None
+                continue
+    return sig_min, sig_max, gains
+
+def plot_hist_variable_values(sig_min, sig_max, gains, name):
+    X,Y = np.meshgrid(sig_min, sig_max)
+    fig,ax = plt.subplots(figsize = (10,5))
+    p = ax.pcolormesh(X,Y,gains/1e6)
+    plt.xlabel("signal min")
+    plt.ylabel("signal_max")
+    fig.colorbar(p, ax = ax)
+    plt.tight_layout()
+    plt.savefig(name)
+    plt.show()
+
+
 
 def hist(waveforms, ped_min=0, ped_max= 100, sig_min= 190, sig_max=400, bins = 200, histo_range= None, plot = False, name = None,title = None):
     int_ranges = (ped_min, ped_max, sig_min, sig_max)
