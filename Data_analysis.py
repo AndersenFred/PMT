@@ -184,10 +184,10 @@ def hist_variable_values(waveforms, ped_min, ped_max, sig_min_start, sig_max_sta
 def plot_hist_variable_values(sig_min, sig_max, gains, name):
     X,Y = np.meshgrid(sig_min, sig_max)
     fig,ax = plt.subplots(figsize = (10,5))
-    p = ax.pcolormesh(X,Y,gains/1e6)
+    p = ax.pcolormesh(X,Y,gains.T/1e6)
     plt.xlabel("signal min")
-    plt.ylabel("signal_max")
-    fig.colorbar(p, ax = ax)
+    plt.ylabel("signal max")
+    fig.colorbar(p, ax = ax, label = r'gain $10{6}$')
     plt.tight_layout()
     plt.savefig(name)
     plt.show()
