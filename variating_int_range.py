@@ -47,6 +47,6 @@ minutes = int((measurment_time-hours*3600)/60)
 seconds = int((measurment_time-hours*3600-minutes*60))
 print(f'computing time: {hours}h{minutes}m{seconds}s')
 
-data.plot_hist_variable_values(sig_min, sig_max, gains, name = 'variating_int_range/Variating_signal_int_ranges {SN}, HV = {HV}.pdf')
+data.plot_hist_variable_values(sig_min, sig_max, gains, name = f'variating_int_range/Variating_signal_int_ranges {SN}, HV = {HV}.pdf')
 
 
