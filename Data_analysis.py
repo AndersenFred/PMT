@@ -164,7 +164,9 @@ def hist_variable_sig_min(waveforms, ped_min, ped_max, sig_min_start, sig_max,h_
 
 
 def hist_variable_values(waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h_int, interval_sig_min = 10,interval_sig_max = 10, number_sig_min = 10, number_sig_max = 10):
-    gains = np.zeros((number_sig_min, number_sig_max))
+    gains = np.full((number_sig_min, number_sig_max),np.nan)
+    nphes = np.full((number_sig_min, number_sig_max),np.nan)
+    gain_errs = np.full((number_sig_min, number_sig_max),np.nan)
     sig_min = np.linspace(sig_min_start-number_sig_min*interval_sig_min, sig_min_start, number_sig_min)
     sig_max = np.linspace(sig_max_start, sig_max_start+interval_sig_max*number_sig_max, number_sig_max)
     for i in range(number_sig_min):
@@ -173,24 +175,47 @@ def hist_variable_values(waveforms, ped_min, ped_max, sig_min_start, sig_max_sta
                 x,y, int_ranges = histogramm(waveforms, ped_min, ped_max, sig_min_start-interval_sig_min*i, sig_max_start+interval_sig_max*j)
                 gain, nphe, gain_err = hist_fitter(x,y,h_int, plot = False)
                 gains[i,j] = gain
+                nphes [i,j]= nphe
+                gain_errs [i,j]=gain_err
             except ValueError:
-                gains[i,j] = None
                 continue
             except TypeError:
-                gains[i,j] = None
                 continue
-    return sig_min, sig_max, gains
+    return sig_min, sig_max, gains, nphes, gain_errs
 
-def plot_hist_variable_values(sig_min, sig_max, gains, name):
+
+def plot_hist_variable_values(sig_min, sig_max, gains,nphes,h_int ,gain_errs, name= None):
     X,Y = np.meshgrid(sig_min, sig_max)
-    fig,ax = plt.subplots(figsize = (10,5))
-    p = ax.pcolormesh(X,Y,gains.T/1e6)
-    plt.xlabel("signal min")
-    plt.ylabel("signal max")
-    fig.colorbar(p, ax = ax, label = r'gain $10{6}$')
-    plt.tight_layout()
-    plt.savefig(name)
-    plt.show()
+    fig,ax = plt.subplots(figsize = (10,15), nrows = 3, constrained_layout = True)
+    secx = ax[0].secondary_xaxis('top', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
+    secx.set_xlabel('Integrationtime min in ns')
+    secy = ax[0].secondary_yaxis('right', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
+    secy.set_ylabel('Integrationt min in ns')
+    p = ax[0].pcolormesh(X,Y,gains.T/1e6,shading='auto')
+    ax[0].set_ylabel("Integration max endingin sample")
+    fig.colorbar(p, label = r'gain $10^6$', orientation = "vertical", ax = ax[0])
+
+
+    secy_2 = ax[1].secondary_yaxis('right', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
+    secy_2.set_ylabel('Integration max in ns')
+    secx_2 = ax[1].secondary_xaxis('top', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
+    p = ax[1].pcolormesh(X,Y,gain_errs.T/1e6,shading='auto')
+    ax[1].set_ylabel("Integration max in sample")
+    fig.colorbar(p, label = r'gain errors $10^6$', orientation = "vertical", ax = ax[1])
+
+
+    secy_3 = ax[2].secondary_yaxis('right', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
+    secy_3.set_ylabel('Integrationtime in ns')
+    ax[2].set_xlabel('Integration max in Sample')
+    secx_3 = ax[2].secondary_xaxis('top', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
+    p = ax[2].pcolormesh(X,Y,nphes.T,shading='auto')
+    ax[2].set_ylabel("Integration max in sample")
+    fig.colorbar(p, label = r'nphes', orientation = "vertical", ax = ax[2])
+    if name != None:
+        plt.savefig(name)
+    #plt.show()
+
+
 
 
 
