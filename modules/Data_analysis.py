@@ -174,9 +174,9 @@ def hist_variable_values(waveforms, ped_min, ped_max, sig_min_start, sig_max_sta
             try:
                 x,y, int_ranges = histogramm(waveforms, ped_min, ped_max, sig_min_start-interval_sig_min*i, sig_max_start+interval_sig_max*j)
                 gain, nphe, gain_err = hist_fitter(x,y,h_int, plot = False)
-                gains[i,j] = gain
-                nphes [i,j]= nphe
-                gain_errs [i,j]=gain_err
+                gains[number_sig_min-1-i,j] = gain
+                nphes [number_sig_min-1-i,j]= nphe
+                gain_errs [number_sig_min-1-i,j]=gain_err
             except ValueError:
                 continue
             except TypeError:
@@ -214,10 +214,6 @@ def plot_hist_variable_values(sig_min, sig_max, gains,nphes,h_int ,gain_errs, na
     if name != None:
         plt.savefig(name)
     #plt.show()
-
-
-
-
 
 def hist(waveforms, ped_min=0, ped_max= 100, sig_min= 190, sig_max=400, bins = 200, histo_range= None, plot = False, name = None,title = None):
     int_ranges = (ped_min, ped_max, sig_min, sig_max)
