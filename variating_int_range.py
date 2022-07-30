@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import Data_analysis as data
+import modules.data_analysis as data
 import time
 before = time.time()
 HV = '1170_0'
