@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import scipy.optimize as opt
 from datetime import datetime
 import scipy.constants
+import sys
 from peeemtee.pmt_resp_func import ChargeHistFitter
 e = scipy.constants.e
 import time
@@ -169,6 +170,20 @@ def hist_variable_values(waveforms, ped_min, ped_max, sig_min_start, sig_max_sta
     gain_errs = np.full((number_sig_min, number_sig_max),np.nan)
     sig_min = np.linspace(sig_min_start-number_sig_min*interval_sig_min, sig_min_start, number_sig_min)
     sig_max = np.linspace(sig_max_start, sig_max_start+interval_sig_max*number_sig_max, number_sig_max)
+    before = time.time()
+    for j in range(int(number_sig_max/10)):
+        try:
+            x,y, int_ranges = histogramm(waveforms, ped_min, ped_max, sig_min_start, sig_max_start+j)
+            gain, nphe, gain_err = hist_fitter(x,y,h_int, plot = False)
+        except ValueError:
+            continue
+        except TypeError:
+            continue
+    measurment_time = (time.time()-before)*number_sig_min*10
+    hours = int(measurment_time/3600)
+    minutes = int((measurment_time-hours*3600)/60)
+    seconds = int((measurment_time-hours*3600-minutes*60))
+    print(f'estimated computing time: {hours}h{minutes}m{seconds}s')
     for i in range(number_sig_min):
         for j in range(number_sig_max):
             try:
@@ -184,9 +199,16 @@ def hist_variable_values(waveforms, ped_min, ped_max, sig_min_start, sig_max_sta
     return sig_min, sig_max, gains, nphes, gain_errs
 
 
-def plot_hist_variable_values(sig_min, sig_max, gains,nphes,h_int ,gain_errs, name= None):
+def plot_hist_variable_values(sig_min, sig_max, gains, nphes, h_int ,gain_errs, name= None, nrows = 3, show = False, waveforms= None):
+    if nrows != 3 and nrows !=4:
+        raise ValueError(f'nrows has to be either 3 or 4. nrows = {nrows}')
+    try:
+        if (nrows == 4 and waveforms == None):
+            raise ValueError(f'if nrows equals 4, waveforms must not ne None')
+    except ValueError:
+        pass
     X,Y = np.meshgrid(sig_min, sig_max)
-    fig,ax = plt.subplots(figsize = (10,15), nrows = 3, constrained_layout = True)
+    fig,ax = plt.subplots(figsize = (10,15), nrows = nrows , constrained_layout = True)
     secx = ax[0].secondary_xaxis('top', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
     secx.set_xlabel('Integrationtime min in ns')
     secy = ax[0].secondary_yaxis('right', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
@@ -195,14 +217,12 @@ def plot_hist_variable_values(sig_min, sig_max, gains,nphes,h_int ,gain_errs, na
     ax[0].set_ylabel("Integration max endingin sample")
     fig.colorbar(p, label = r'gain $10^6$', orientation = "vertical", ax = ax[0])
 
-
     secy_2 = ax[1].secondary_yaxis('right', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
     secy_2.set_ylabel('Integration max in ns')
     secx_2 = ax[1].secondary_xaxis('top', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
     p = ax[1].pcolormesh(X,Y,gain_errs.T/1e6,shading='auto')
     ax[1].set_ylabel("Integration max in sample")
     fig.colorbar(p, label = r'gain errors $10^6$', orientation = "vertical", ax = ax[1])
-
 
     secy_3 = ax[2].secondary_yaxis('right', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
     secy_3.set_ylabel('Integrationtime in ns')
@@ -211,9 +231,18 @@ def plot_hist_variable_values(sig_min, sig_max, gains,nphes,h_int ,gain_errs, na
     p = ax[2].pcolormesh(X,Y,nphes.T,shading='auto')
     ax[2].set_ylabel("Integration max in sample")
     fig.colorbar(p, label = r'nphes', orientation = "vertical", ax = ax[2])
+
+    if nrows == 4:
+        ax[3].set_title('Mean Plot')
+        secy_3 = ax[3].secondary_xaxis('top', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
+        secy_3.set_xlabel('time in ns')
+        ax[3].set_xlabel('time in sample')
+        ax[3].set_ylabel('Voltage in V')
+        ax[3].plot(np.mean(waveforms, axis = 0))
     if name != None:
         plt.savefig(name)
-    #plt.show()
+    if show:
+        plt.show()
 
 def hist(waveforms, ped_min=0, ped_max= 100, sig_min= 190, sig_max=400, bins = 200, histo_range= None, plot = False, name = None,title = None):
     int_ranges = (ped_min, ped_max, sig_min, sig_max)
