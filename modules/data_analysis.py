@@ -2,6 +2,7 @@ import numpy as np
 import h5py
 import matplotlib.pyplot as plt
 import scipy.optimize as opt
+import math
 from datetime import datetime
 import scipy.constants
 import sys
@@ -9,8 +10,8 @@ from peeemtee.pmt_resp_func import ChargeHistFitter
 e = scipy.constants.e
 import time
 from scipy.optimize import curve_fit as curve_fit
-
-
+import os
+import multiprocessing as mp
 class WavesetReader:
     def __init__(self, h5_filename):
         self.filename = h5_filename
@@ -163,6 +164,49 @@ def hist_variable_sig_min(waveforms, ped_min, ped_max, sig_min_start, sig_max,h_
             continue
     return np.array(gains), np.array(sig_end), np.array(gain_errs)
 
+def mp_factor(waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h_int, interval_sig_min,interval_sig_max, number_sig_min, number_sig_max, number_of_processes):
+    queue = mp.Queue()
+    chunks = int(math.ceil(number_sig_min/number_of_processes))
+    procs = []
+    results = {}
+    for i in range(number_of_processes):
+        proc = mp.Process(target = hist_variable_values_mp, args = (queue, waveforms, ped_min, ped_max, sig_min_start-i*chunks,sig_max_start,h_int,i, interval_sig_min,interval_sig_max ,chunks,  number_sig_max, ))
+        procs.append(proc)
+        proc.start()
+    for i in range(number_of_processes):
+        results.update(queue.get())
+    for i in procs:
+        i.join()
+    gains = np.array(results[0][0])
+    nphes = np.array(results[0][2])
+    gain_errs = np.array(results[0][1])
+    sig_min = np.linspace(sig_min_start-chunks*number_of_processes*interval_sig_min, sig_min_start, chunks*number_of_processes)
+    sig_max = np.linspace(sig_max_start, sig_max_start+interval_sig_max*number_sig_max, number_sig_max)
+    for i in range(number_of_processes-1):
+        i+=1
+        gains = np.append(gains,results[i][0],axis = 0)
+        nphes = np.append(nphes,results[i][2],axis = 0)
+        gain_errs = np.append(gain_errs,results[i][1],axis = 0)
+    return sig_min, sig_max, np.flip(gains, axis = 0), np.flip(nphes, axis = 0),np.flip(gain_errs, axis = 0)
+
+def hist_variable_values_mp(queue, waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h_int,p, interval_sig_min,interval_sig_max, number_sig_min, number_sig_max):
+    gains = np.full((number_sig_min, number_sig_max),np.nan)
+    nphes = np.full((number_sig_min, number_sig_max),np.nan)
+    gain_errs = np.full((number_sig_min, number_sig_max),np.nan)
+    for i in range(int(number_sig_min)):
+        for j in range(number_sig_max):
+            try:
+                x,y, int_ranges = histogramm(waveforms, ped_min, ped_max, sig_min_start-interval_sig_min*i, sig_max_start+interval_sig_max*j)
+                gain, nphe, gain_err = hist_fitter(x,y,h_int, plot = False)
+                gains[i,j] = gain
+                nphes [i,j]= nphe
+                gain_errs [i,j]=gain_err
+            except ValueError:
+                continue
+            except TypeError:
+                continue
+    queue.put({p: (gains, gain_errs, nphes)})
+
 
 def hist_variable_values(waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h_int, interval_sig_min = 10,interval_sig_max = 10, number_sig_min = 10, number_sig_max = 10):
     gains = np.full((number_sig_min, number_sig_max),np.nan)
@@ -184,7 +228,7 @@ def hist_variable_values(waveforms, ped_min, ped_max, sig_min_start, sig_max_sta
     minutes = int((measurment_time-hours*3600)/60)
     seconds = int((measurment_time-hours*3600-minutes*60))
     print(f'estimated computing time: {hours}h{minutes}m{seconds}s')
-    for i in range(number_sig_min):
+    for i in range(int(number_sig_min/number_of_threads)):
         for j in range(number_sig_max):
             try:
                 x,y, int_ranges = histogramm(waveforms, ped_min, ped_max, sig_min_start-interval_sig_min*i, sig_max_start+interval_sig_max*j)
@@ -405,3 +449,6 @@ def log_complete_data(name, hvs, gains, gain_errs,err_nom_hv, nphe,int_ranges,h_
     text = f'Date: {datetime.now()}\n HV: {hvs}\n gains: {gains}\n gain_errs: {gain_errs}\n nphes: {np.round(nphe,2)}\n int ranges: {int_ranges};\n int_ranges in ns {int_ranges*h_int*1e9}\n integration time in ns {int_time}\n fit results: {np.round(p_opt,4)}\n cov: {np.round(cov,4)}\n nominal gain: {nominal_gain}\n nominal hv: {np.round(nominal_hv,0)}pm{np.round(err_nom_hv,2)}\n\n\n'
     f.write(text)
     f.close()
+    
+if __name__ == '__main__':
+    pass
