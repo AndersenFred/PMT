@@ -12,6 +12,7 @@ import time
 from scipy.optimize import curve_fit as curve_fit
 import os
 import multiprocessing as mp
+
 class WavesetReader:
     def __init__(self, h5_filename):
         self.filename = h5_filename
@@ -61,25 +62,58 @@ class Waveset:
     def zeroed_waveforms(self, baseline_min, baseline_max):
         return (self.waveforms.T- np.mean(self.waveforms[:, baseline_min:baseline_max], axis=1)).T
 
-def save_rawdata_to_file( h5_filename, data, Measurement_time, y_off, YMULT, samplerate, HV):
+def save_rawdata_to_file( h5_filename: str, data, measurement_time:float, y_off:float, YMULT:float, samplerate:float, HV:int)-> None:
+    """
+    saves rawdata to file
+
+    Parameters
+    ----------
+    h5_filename: string
+        folder an filename where to save the data
+    data: np.array
+        data to be saved
+    measurement_time: float
+        time that measurment took
+    y_off: float
+        offset to be added on the measurment
+    YMUILT: float
+        conversion factor form raw data to data
+    samplerate: float
+        samplerate on which the measurment were taken
+    HV: int or str
+        voltage of measurment
+
+    """
     f = h5py.File(h5_filename, 'a')
-    i=0
-    while(True):
-        try:
-            f.create_dataset(f"{HV}_{i}/waveforms", data=data, dtype=np.int8)
-            wf_info = f.create_group(f"{HV}_{i}/waveform_info")
-            break
-        except ValueError:
-            i+=1
-            print(i)
+    try:
+        f.create_dataset(f"{HV}/waveforms", data=data, dtype=np.int8)
+        wf_info = f.create_group(f"{HV}/waveform_info")
+        break
+    except ValueError:
+        raise ValueError(f'There already exists a measurment with HV = {HV}')
     wf_info["h_int"] = 1/samplerate
     wf_info["v_gain"] =  YMULT
-    wf_info["Measurement_time"] = Measurement_time
+    wf_info["measurement_time"] = measurement_time
     wf_info["y_off"] = y_off
     f.close()
-    return i
 
-def add_fit_results(h5_filename, HV, gain, nphe, gain_err, int_ranges):
+def add_fit_results(h5_filename: str, HV:int, gain:float, nphe:float, gain_err:float, int_ranges) -> None:
+    """
+    saves the fit results
+
+    Parameters
+    ----------
+    h5_filename: string
+        folder an filename where to save the data
+    HV: int
+        voltage on which data were taken
+    gain: float
+        resulting gain
+    gain_err: float
+        error on gain
+    int_range: array
+        integraton range
+    """
     with h5py.File(h5_filename, "a") as f:
         fit_results = f.create_group(f"{HV}/fit_results")
         fit_results["nphe"] = nphe
@@ -89,6 +123,22 @@ def add_fit_results(h5_filename, HV, gain, nphe, gain_err, int_ranges):
         f.close()
 
 def rewrite_fit_results(h5_filename, HV, gain, nphe, gain_err, int_ranges):
+    """
+    deletes old fit results and saves new
+
+    Parameters
+    ----------
+    h5_filename: string
+        folder an filename where to save the data
+    HV: int
+        voltage on which data were taken
+    gain: float
+        resulting gain
+    gain_err: float
+        error on gain
+    int_range: array
+        integraton range
+    """
     with h5py.File(h5_filename, "r+") as f:
         fit_results = f[f"{HV}/fit_results"]
         del fit_results["nphe"]
@@ -164,7 +214,7 @@ def hist_variable_sig_min(waveforms, ped_min, ped_max, sig_min_start, sig_max,h_
             continue
     return np.array(gains), np.array(sig_end), np.array(gain_errs)
 
-def mp_factor(waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h_int, interval_sig_min,interval_sig_max, number_sig_min, number_sig_max, number_of_processes):
+def mp_var_int_range(waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h_int, interval_sig_min,interval_sig_max, number_sig_min, number_sig_max, number_of_processes):
     queue = mp.Queue()
     chunks = int(math.ceil(number_sig_min/number_of_processes))
     procs = []
@@ -254,26 +304,26 @@ def plot_hist_variable_values(sig_min, sig_max, gains, nphes, h_int ,gain_errs, 
     X,Y = np.meshgrid(sig_min, sig_max)
     fig,ax = plt.subplots(figsize = (10,15), nrows = nrows , constrained_layout = True)
     secx = ax[0].secondary_xaxis('top', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
-    secx.set_xlabel('Integrationtime min in ns')
+    secx.set_xlabel('Integration start in ns')
     secy = ax[0].secondary_yaxis('right', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
-    secy.set_ylabel('Integrationt min in ns')
+    secy.set_ylabel('Integration start in ns')
     p = ax[0].pcolormesh(X,Y,gains.T/1e6,shading='auto')
-    ax[0].set_ylabel("Integration max endingin sample")
+    ax[0].set_ylabel("Integration end in sample")
     fig.colorbar(p, label = r'gain $10^6$', orientation = "vertical", ax = ax[0])
 
     secy_2 = ax[1].secondary_yaxis('right', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
-    secy_2.set_ylabel('Integration max in ns')
+    secy_2.set_ylabel('"Integration end in ns')
     secx_2 = ax[1].secondary_xaxis('top', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
     p = ax[1].pcolormesh(X,Y,gain_errs.T/1e6,shading='auto')
-    ax[1].set_ylabel("Integration max in sample")
+    ax[1].set_ylabel("Integration end in sample")
     fig.colorbar(p, label = r'gain errors $10^6$', orientation = "vertical", ax = ax[1])
 
     secy_3 = ax[2].secondary_yaxis('right', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
-    secy_3.set_ylabel('Integrationtime in ns')
-    ax[2].set_xlabel('Integration max in Sample')
+    secy_3.set_ylabel('"Integration start in ns')
+    ax[2].set_xlabel('"Integration end in Sample')
     secx_3 = ax[2].secondary_xaxis('top', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
     p = ax[2].pcolormesh(X,Y,nphes.T,shading='auto')
-    ax[2].set_ylabel("Integration max in sample")
+    ax[2].set_ylabel("Integration end in sample")
     fig.colorbar(p, label = r'nphes', orientation = "vertical", ax = ax[2])
 
     if nrows == 4:
@@ -322,8 +372,8 @@ def histogramm(waveforms, ped_min=0, ped_max= 100, sig_min= 190, sig_max=400, bi
 
 def hist_fitter(hi, bin_edges, h_int, plot = True):#input has to be from hist()
     fitter = ChargeHistFitter()
-    fitter.pre_fit(bin_edges, hi)
-    fit_function = fitter.fit_pmt_resp_func(bin_edges,hi)
+    fitter.pre_fit(bin_edges, hi, print_level = 0)
+    fit_function = fitter.fit_pmt_resp_func(bin_edges,hi, print_level = 0)
     fitter.opt_ped_values
     fitter.opt_spe_values
     if (plot):
@@ -449,6 +499,6 @@ def log_complete_data(name, hvs, gains, gain_errs,err_nom_hv, nphe,int_ranges,h_
     text = f'Date: {datetime.now()}\n HV: {hvs}\n gains: {gains}\n gain_errs: {gain_errs}\n nphes: {np.round(nphe,2)}\n int ranges: {int_ranges};\n int_ranges in ns {int_ranges*h_int*1e9}\n integration time in ns {int_time}\n fit results: {np.round(p_opt,4)}\n cov: {np.round(cov,4)}\n nominal gain: {nominal_gain}\n nominal hv: {np.round(nominal_hv,0)}pm{np.round(err_nom_hv,2)}\n\n\n'
     f.write(text)
     f.close()
-    
+
 if __name__ == '__main__':
     pass
