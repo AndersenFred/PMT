@@ -88,7 +88,6 @@ def save_rawdata_to_file( h5_filename: str, data, measurement_time:float, y_off:
     try:
         f.create_dataset(f"{HV}/waveforms", data=data, dtype=np.int8)
         wf_info = f.create_group(f"{HV}/waveform_info")
-        break
     except ValueError:
         raise ValueError(f'There already exists a measurment with HV = {HV}')
     wf_info["h_int"] = 1/samplerate
@@ -151,8 +150,32 @@ def rewrite_fit_results(h5_filename, HV, gain, nphe, gain_err, int_ranges):
         fit_results["int_ranges"] = int_ranges
         f.close()
 
-def x_y_values(data,  y_off, YMULT, Measurement_time = None, samplerate = None, h_int = None):
-    '''Method to get the x and y values from rawdata'''
+def x_y_values(data,  y_off:float, YMULT:float, Measurement_time:float = None, samplerate:float = None, h_int:float = None):
+    '''
+    converges raw data to x and y data
+    !!!Either Measurement_time or samplerate or h_int must not be None!!!
+
+    Parameters
+    ----------
+    data: np.array
+        data to be converged
+    measurement_time: float, default: None
+        time that measurment took
+    y_off: float, default: None
+        offset to be added on the measurment
+    YMUILT: float, default: None
+        conversion factor form raw data to data
+    samplerate: float, default: None
+        samplerate on which the measurment were taken
+    h_int: float, default: None
+        horizontal interval of data, it is 1/samplerate
+
+    Returns
+    -------
+    np.array, np.array
+        x x-Data of input
+        y y-Data of input
+    '''
     if not Measurement_time == None:
         x = np.linspace(0,Measurement_time,len(data[0,:]))
     elif not samplerate == None:
@@ -166,6 +189,16 @@ def x_y_values(data,  y_off, YMULT, Measurement_time = None, samplerate = None, 
 
 
 def mean_plot(y, int_ranges = (60, 180, 200, 350)):
+    """
+    plot mean of input with standard derivation
+
+    Parameters
+    ----------
+    y: np.array
+        input value to be plotted
+    int_ranges: array, default: (60, 180, 200, 350)
+        area to be highlighted
+    """
     fig, ax = plt.subplots(figsize = (10,5))
     ax.axvspan(int_ranges[0], int_ranges[1], facecolor="red", alpha=0.5)
     ax.axvspan(int_ranges[2], int_ranges[3], facecolor="green", alpha=0.5)
@@ -178,25 +211,81 @@ def mean_plot(y, int_ranges = (60, 180, 200, 350)):
     ax.fill_between(np.linspace(1,len(y_data),len(y_data)), y_data-y_std, y_data + y_std, color='gray', alpha=0.2)
     plt.show(block = False)
 
-def hist_variable_sig_max(waveforms, ped_min, ped_max, sig_min, sig_max_start,h_int, interval = 10, number = 10):
+
+def hist_variable_sig_max(waveforms, ped_min:int, ped_max:int, sig_min:int, sig_max_start:int,h_int:float, interval = 10, number = 10):
+    """
+    calculates the histogramm of charges with a variable ending integration
+
+    Parameters
+    ----------
+    waveforms: np.array
+        input array to calculate the autogram
+    ped_min, ped_max: int
+        the numimum and maximum values for pedestals
+    sig_min: int
+        starting value of Integration
+    sig_max_start: int
+        ending value for integraton
+    h_int: float
+        horizontal interval of data
+    interval: int, default: 10
+        step between integrations
+    number: int, default: 10
+        number of integrations
+
+    Returns
+    -------
+    np.array, np.array, np.array, np.array
+
+        gains, gain_errs, nphes, sig_max
+
+    """
     gains = []
     gain_errs = []
     sig_end = []
+    nphes = []
     for i in range(number):
         try:
             x,y, int_ranges = histogramm(waveforms, ped_min, ped_max, sig_min, sig_max_start+interval*i)
             gain, nphe, gain_err = hist_fitter(x,y,h_int, plot = False)
-            print(gain)
             gains.append(gain)
             sig_end.append(sig_max_start+interval*i)
             gain_errs.append(gain_err)
+            nphes.append(nphe)
         except ValueError:
             continue
         except TypeError:
             continue
-    return np.array(gains), np.array(sig_end), np.array(gain_errs)
+    return np.array(gains), np.array(gain_errs),np.array(nphes), np.array(sig_end)
 
 def hist_variable_sig_min(waveforms, ped_min, ped_max, sig_min_start, sig_max,h_int, interval = 10, number = 10):
+    """
+    calculates the histogramm of charges with a variable starting integration
+
+    Parameters
+    ----------
+    waveforms: np.array
+        input array to calculate the autogram
+    ped_min, ped_max: int
+        the numimum and maximum values for pedestals
+    sig_min_start: int
+        start of Integration
+    sig_max: int
+        ending value for integraton
+    h_int: float
+        horizontal interval of data
+    interval: int, default: 10
+        step between integrations
+    number: int, default: 10
+        number of integrations
+
+    Returns
+    -------
+    np.array, np.array, np.array, np.array
+
+        gains, gain_errs, nphes, sig_min
+
+    """
     gains = []
     gain_errs = []
     sig_end = []
@@ -214,13 +303,44 @@ def hist_variable_sig_min(waveforms, ped_min, ped_max, sig_min_start, sig_max,h_
             continue
     return np.array(gains), np.array(sig_end), np.array(gain_errs)
 
-def mp_var_int_range(waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h_int, interval_sig_min,interval_sig_max, number_sig_min, number_sig_max, number_of_processes):
+def mp_var_int_range(waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h_int, interval_sig_min,interval_sig_max, number_sig_min, number_sig_max, number_of_processes = os.cpu_count()):
+    """
+    calculates the histogramm of charges with a variable integration borders
+    Works on multiple threads
+
+    Parameters
+    ----------
+    waveforms: np.array
+        input array to calculate the autogram
+    ped_min, ped_max: int
+        the numimum and maximum values for pedestals
+    sig_min_start: int
+        start of Integration
+    sig_max: int
+        ending value for integraton
+    h_int: float
+        horizontal interval of data
+    interval: int, default: 10
+        step between integrations
+    number_sig_min: int
+        number of integrations in sig_min direction
+    number_sig_max: int
+        number of integrations in sig_min direction
+    number_of_processes: int default: os.cpu_count()
+        number of created threads
+    Returns
+    -------
+    np.array, np.array, np.array, np.array, np.array
+
+        sig_min, sig_max, gains, gain_errs, nphes
+    !!!sig_min, gains, gain_errs, nphes has always a lenth math.ceil(number_sig_min/number_of_processes)*number_of_processes
+    """
     queue = mp.Queue()
     chunks = int(math.ceil(number_sig_min/number_of_processes))
     procs = []
     results = {}
     for i in range(number_of_processes):
-        proc = mp.Process(target = hist_variable_values_mp, args = (queue, waveforms, ped_min, ped_max, sig_min_start-i*chunks,sig_max_start,h_int,i, interval_sig_min,interval_sig_max ,chunks,  number_sig_max, ))
+        proc = mp.Process(target = hist_variable_values_mp, args = (queue, waveforms, ped_min, ped_max, sig_min_start-i*chunks,sig_max_start,h_int,i, interval_sig_min,interval_sig_max ,chunks,  number_sig_max, 0))
         procs.append(proc)
         proc.start()
     for i in range(number_of_processes):
@@ -237,9 +357,36 @@ def mp_var_int_range(waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h
         gains = np.append(gains,results[i][0],axis = 0)
         nphes = np.append(nphes,results[i][2],axis = 0)
         gain_errs = np.append(gain_errs,results[i][1],axis = 0)
+    print(np.shape(gains))    
     return sig_min, sig_max, np.flip(gains, axis = 0), np.flip(nphes, axis = 0),np.flip(gain_errs, axis = 0)
 
-def hist_variable_values_mp(queue, waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h_int,p, interval_sig_min,interval_sig_max, number_sig_min, number_sig_max):
+def hist_variable_values_mp(queue, waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h_int,p, interval_sig_min,interval_sig_max, number_sig_min, number_sig_max, print_level):
+    """
+    auxiliary method for mp_var_int_range
+
+    Parameters
+    ----------
+    queue:
+    waveforms: np.array
+        input array to calculate the autogram
+    ped_min, ped_max: int
+        the numimum and maximum values for pedestals
+    sig_min_start: int
+        start of Integration
+    sig_max: int
+        ending value for integraton
+    h_int: float
+        horizontal interval of data
+    interval: int, default: 10
+        step between integrations
+    number_sig_min: int
+        number of integrations in sig_min direction
+    number_sig_max: int
+        number of integrations in sig_min direction
+    print_level: int
+        0: quiet, 1: print fit details
+
+    """
     gains = np.full((number_sig_min, number_sig_max),np.nan)
     nphes = np.full((number_sig_min, number_sig_max),np.nan)
     gain_errs = np.full((number_sig_min, number_sig_max),np.nan)
