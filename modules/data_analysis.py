@@ -6,7 +6,7 @@ import math
 from datetime import datetime
 import scipy.constants
 import sys
-from peeemtee.pmt_resp_func import ChargeHistFitter
+from modules.pmt_resp_func import ChargeHistFitter
 e = scipy.constants.e
 import time
 from scipy.optimize import curve_fit as curve_fit
@@ -31,9 +31,9 @@ class WavesetReader:
             raw_waveforms = f[f"{key}/waveforms"][:]
             v_gain = f[f"{key}/waveform_info/v_gain"][()]
             h_int = f[f"{key}/waveform_info/h_int"][()]
-            Measurement_time = f[f"{key}/waveform_info/Measurement_time"][()]
-            y_off = f[f"{key}/waveform_info/y_off"][()]
             try:
+                Measurement_time = f[f"{key}/waveform_info/Measurement_time"][()]
+                y_off = f[f"{key}/waveform_info/y_off"][()]
                 fit_results = (f[key]['fit_results']['gain'][()],f[key]['fit_results']['nphe'][()],f[key]['fit_results']['gain_err'][()],f[key]['fit_results']['int_ranges'][()])
             except KeyError:
                 fit_results = None
@@ -293,7 +293,6 @@ def hist_variable_sig_min(waveforms, ped_min, ped_max, sig_min_start, sig_max,h_
         try:
             x,y, int_ranges = histogramm(waveforms, ped_min, ped_max, sig_min_start-interval*i, sig_max)
             gain, nphe, gain_err = hist_fitter(x,y,h_int, plot = False)
-            print(gain)
             gains.append(gain)
             sig_end.append(sig_min_start-interval*i)
             gain_errs.append(gain_err)
@@ -303,7 +302,7 @@ def hist_variable_sig_min(waveforms, ped_min, ped_max, sig_min_start, sig_max,h_
             continue
     return np.array(gains), np.array(sig_end), np.array(gain_errs)
 
-def mp_var_int_range(waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h_int, interval_sig_min,interval_sig_max, number_sig_min, number_sig_max, number_of_processes = os.cpu_count()):
+def mp_var_int_range(waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h_int, interval_sig_min,interval_sig_max, number_sig_min, number_sig_max, number_of_processes = os.cpu_count(), print_level = 0):
     """
     calculates the histogramm of charges with a variable integration borders
     Works on multiple threads
@@ -340,7 +339,7 @@ def mp_var_int_range(waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h
     procs = []
     results = {}
     for i in range(number_of_processes):
-        proc = mp.Process(target = hist_variable_values_mp, args = (queue, waveforms, ped_min, ped_max, sig_min_start-i*chunks,sig_max_start,h_int,i, interval_sig_min,interval_sig_max ,chunks,  number_sig_max, 0))
+        proc = mp.Process(target = hist_variable_values_mp, args = (queue, waveforms, ped_min, ped_max, sig_min_start-i*chunks,sig_max_start,h_int,i, interval_sig_min,interval_sig_max ,chunks,  number_sig_max, print_level))
         procs.append(proc)
         proc.start()
     for i in range(number_of_processes):
@@ -357,7 +356,6 @@ def mp_var_int_range(waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h
         gains = np.append(gains,results[i][0],axis = 0)
         nphes = np.append(nphes,results[i][2],axis = 0)
         gain_errs = np.append(gain_errs,results[i][1],axis = 0)
-    print(np.shape(gains))    
     return sig_min, sig_max, np.flip(gains, axis = 0), np.flip(nphes, axis = 0),np.flip(gain_errs, axis = 0)
 
 def hist_variable_values_mp(queue, waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h_int,p, interval_sig_min,interval_sig_max, number_sig_min, number_sig_max, print_level):
@@ -384,17 +382,26 @@ def hist_variable_values_mp(queue, waveforms, ped_min, ped_max, sig_min_start, s
     number_sig_max: int
         number of integrations in sig_min direction
     print_level: int
-        0: quiet, 1: print fit details
+        0: quiet, 1,2,3: print fit details
 
     """
     gains = np.full((number_sig_min, number_sig_max),np.nan)
     nphes = np.full((number_sig_min, number_sig_max),np.nan)
     gain_errs = np.full((number_sig_min, number_sig_max),np.nan)
     for i in range(int(number_sig_min)):
-        for j in range(number_sig_max):
+        for j in range(int(number_sig_max)):
             try:
                 x,y, int_ranges = histogramm(waveforms, ped_min, ped_max, sig_min_start-interval_sig_min*i, sig_max_start+interval_sig_max*j)
                 gain, nphe, gain_err = hist_fitter(x,y,h_int, plot = False)
+                if gain < 0:
+                    continue
+                if gain > 1e8:
+                    print('Strange value occured at:')
+                    print('sig_min = ', sig_min_start-interval_sig_min*i)
+                    print('sig_max = ', sig_max_start+interval_sig_max*j)
+                    print('gain = ', gain)
+                    print(int_ranges)
+                    continue
                 gains[i,j] = gain
                 nphes [i,j]= nphe
                 gain_errs [i,j]=gain_err
@@ -411,25 +418,13 @@ def hist_variable_values(waveforms, ped_min, ped_max, sig_min_start, sig_max_sta
     gain_errs = np.full((number_sig_min, number_sig_max),np.nan)
     sig_min = np.linspace(sig_min_start-number_sig_min*interval_sig_min, sig_min_start, number_sig_min)
     sig_max = np.linspace(sig_max_start, sig_max_start+interval_sig_max*number_sig_max, number_sig_max)
-    before = time.time()
-    for j in range(int(number_sig_max/10)):
-        try:
-            x,y, int_ranges = histogramm(waveforms, ped_min, ped_max, sig_min_start, sig_max_start+j)
-            gain, nphe, gain_err = hist_fitter(x,y,h_int, plot = False)
-        except ValueError:
-            continue
-        except TypeError:
-            continue
-    measurment_time = (time.time()-before)*number_sig_min*10
-    hours = int(measurment_time/3600)
-    minutes = int((measurment_time-hours*3600)/60)
-    seconds = int((measurment_time-hours*3600-minutes*60))
-    print(f'estimated computing time: {hours}h{minutes}m{seconds}s')
     for i in range(int(number_sig_min/number_of_threads)):
         for j in range(number_sig_max):
             try:
                 x,y, int_ranges = histogramm(waveforms, ped_min, ped_max, sig_min_start-interval_sig_min*i, sig_max_start+interval_sig_max*j)
                 gain, nphe, gain_err = hist_fitter(x,y,h_int, plot = False)
+                if gain < 1e8:
+                    continue
                 gains[number_sig_min-1-i,j] = gain
                 nphes [number_sig_min-1-i,j]= nphe
                 gain_errs [number_sig_min-1-i,j]=gain_err
@@ -453,7 +448,7 @@ def plot_hist_variable_values(sig_min, sig_max, gains, nphes, h_int ,gain_errs, 
     secx = ax[0].secondary_xaxis('top', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
     secx.set_xlabel('Integration start in ns')
     secy = ax[0].secondary_yaxis('right', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
-    secy.set_ylabel('Integration start in ns')
+    secy.set_ylabel('Integration end in ns')
     p = ax[0].pcolormesh(X,Y,gains.T/1e6,shading='auto')
     ax[0].set_ylabel("Integration end in sample")
     fig.colorbar(p, label = r'gain $10^6$', orientation = "vertical", ax = ax[0])
@@ -466,8 +461,8 @@ def plot_hist_variable_values(sig_min, sig_max, gains, nphes, h_int ,gain_errs, 
     fig.colorbar(p, label = r'gain errors $10^6$', orientation = "vertical", ax = ax[1])
 
     secy_3 = ax[2].secondary_yaxis('right', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
-    secy_3.set_ylabel('"Integration start in ns')
-    ax[2].set_xlabel('"Integration end in Sample')
+    secy_3.set_ylabel('Integration end in ns')
+    ax[2].set_xlabel('Integration start in Sample')
     secx_3 = ax[2].secondary_xaxis('top', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
     p = ax[2].pcolormesh(X,Y,nphes.T,shading='auto')
     ax[2].set_ylabel("Integration end in sample")
@@ -485,7 +480,7 @@ def plot_hist_variable_values(sig_min, sig_max, gains, nphes, h_int ,gain_errs, 
     if show:
         plt.show()
 
-def hist(waveforms, ped_min=0, ped_max= 100, sig_min= 190, sig_max=400, bins = 200, histo_range= None, plot = False, name = None,title = None):
+def hist(waveforms, ped_min=0, ped_max= 100, sig_min= 190, sig_max=400, bins = 200, histo_range= None, plot = True, name = None,title = None):
     int_ranges = (ped_min, ped_max, sig_min, sig_max)
     mean_plot(waveforms,int_ranges)
     try:
@@ -496,41 +491,46 @@ def hist(waveforms, ped_min=0, ped_max= 100, sig_min= 190, sig_max=400, bins = 2
         print(f'ValueError: used integration ranges {int_ranges}')
     return histogramm(waveforms, ped_min, ped_max, sig_min, sig_max, bins, histo_range, plot, name, title)
 
-def histogramm(waveforms, ped_min=0, ped_max= 100, sig_min= 190, sig_max=400, bins = 200, histo_range= None, plot = False, name = None,title = None):
+def histogramm(waveforms, ped_min=0, ped_max= 100, sig_min= 190, sig_max=400, bins = 200, histo_range= None, plot = False, name = None,title = None, block = True):
     ped_sig_ratio = (ped_max - ped_min) / (sig_max - sig_min)
-    pedestals = (np.sum(waveforms[:, ped_min:ped_max], axis=1)) * ped_sig_ratio
-    charges = (np.sum(waveforms[:, sig_min:sig_max], axis=1))-pedestals
+    pedestals = (np.sum(waveforms[:, ped_min:ped_max], axis=1))
+    charges = (np.sum(waveforms[:, sig_min:sig_max], axis=1))+pedestals/ped_sig_ratio
     if plot:
         fig, ax = plt.subplots(figsize= (10,5))
         range = (np.min(charges),np.max(charges))
+
         ax.hist(charges, range=range, bins=200, log=True,color = 'b')
-        ax.hist(pedestals, range=range, bins=200, log=True,color = 'r')
+        ax.hist(pedestals-np.mean(pedestals), range=range, bins=200, log=True,color = 'r')
+
         plt.xlabel("Number of Photoelektrons")
         plt.ylabel("Number of events")
         if not title == None:
             plt.title(title)
-        plt.show()
+        plt.show(block = block)
         if not name == None:
-            print(f'saving {name}')
+            print(f'saving {name}.pdf')
             fig.savefig(name + '.pdf')
     hi, bin_edges = np.histogram(charges, range = histo_range, bins = bins)
     bin_edges = (bin_edges-(bin_edges[1])/2)[:-1]
     return hi, bin_edges, np.array([ped_min,ped_max,sig_min,sig_max])
 
-def hist_fitter(hi, bin_edges, h_int, plot = True):#input has to be from hist()
+def hist_fitter(hi, bin_edges, h_int, plot = True,print_level = 0, valley = None):#input has to be from hist()
     fitter = ChargeHistFitter()
-    fitter.pre_fit(bin_edges, hi, print_level = 0)
-    fit_function = fitter.fit_pmt_resp_func(bin_edges,hi, print_level = 0)
+    fitter.pre_fit(bin_edges, hi, print_level = print_level, valley = valley)
+    fit_function = fitter.fit_pmt_resp_func(bin_edges,hi, print_level = print_level)
     fitter.opt_ped_values
     fitter.opt_spe_values
     if (plot):
         plt.semilogy(bin_edges, hi)
         plt.plot(bin_edges,fitter.opt_prf_values)
         plt.ylim(.1,1e5)
-        plt.show(block = False)
+        plt.show(block = True)
     gain = fitter.popt_prf['spe_charge']*h_int/(50*e)
+    if (gain < 0 or gain >1e7) and valley is None:
+        return hist_fitter(hi = hi, bin_edges = bin_edges, h_int = h_int, plot = plot ,print_level = print_level, valley = bin_edges[np.argmin(hi[np.argmax(hi):int(len(hi)/4)])])
     nphe = fitter.popt_prf['nphe']
     gain_err = np.sqrt(fitter.pcov_prf['spe_charge', 'spe_charge'])*h_int/(50*e)
+
     return gain, nphe, gain_err
 
 def fit(x,y, p0 = [], plot = True):
@@ -597,7 +597,6 @@ def analysis_complete_data(h5_filename,nom_manuf_hv,reanalyse= False, saveresult
             elif saveresults:
                 add_fit_results(h5_filename = h5_filename, HV = key, gain = gain, nphe = nphe, gain_err = gain_err, int_ranges = int_ranges)
             gains.append(gain)
-            print(gain)
             nphes.append(nphe)
             gain_errs.append(gain_err)
     p_opt, cov = curve_fit(linear, np.log10(hv), np.log10(gains), sigma = np.log10(gain_errs))
