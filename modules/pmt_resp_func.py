@@ -6,6 +6,20 @@ from iminuit import Minuit
 from .tools import gaussian
 
 
+def num_integ(func, start, end, number=100000):
+    return np.sum(func(np.linspace(start, end, number))) * (end - start) / number
+
+def pmt_resp_func(x, nphe, ped_mean, ped_sigma, spe_charge, spe_sigma, entries, n_gaussians = 10):
+    func = 0.0
+
+    for i in range(n_gaussians):
+        pois = poisson.pmf(int(i), nphe)
+        sigma = np.sqrt(i * spe_sigma ** 2 + ped_sigma ** 2)
+        arg = (x - (i * spe_charge + ped_mean)) / sigma
+        func += pois / sigma * np.exp(-0.5 * arg ** 2)
+    func = entries * func / np.sqrt(2 * np.pi)
+    return func
+
 def fit_gaussian(x, y, print_level=1, calculate_hesse=False):
     """
     Fit a gaussian to data using iminuit migrad
@@ -103,6 +117,7 @@ class ChargeHistFitter(object):
         self, x, nphe, ped_mean, ped_sigma, spe_charge, spe_sigma, entries
     ):
         func = 0.0
+
         for i in range(self.n_gaussians):
             pois = poisson.pmf(int(i), nphe)
             sigma = np.sqrt(i * spe_sigma ** 2 + ped_sigma ** 2)
@@ -125,6 +140,7 @@ class ChargeHistFitter(object):
         uap_A,
     ):
         func = 0.0
+
         for i in range(self.n_gaussians):
             pois = poisson.pmf(int(i), nphe)
             sigma = np.sqrt(i * spe_sigma ** 2 + ped_sigma ** 2)
@@ -395,7 +411,30 @@ class ChargeHistFitter(object):
             self.success = False
         else:
             self.success = True
-        # self.m.hesse()
+        self.m.hesse()
         self.popt_prf = self.m.values
         self.opt_prf_values = func(x, *self.m.values)
         self.pcov_prf = self.m.covariance
+
+
+
+    def quality_check(self, bin_edges, hi,  mod = None):
+        if mod =='uap':
+            func = lambda x: self.pmt_resp_func_uap(x, *self.popt_prf)
+        else:
+            func = lambda x: self.pmt_resp_func(x, *self.popt_prf)
+        norm = 1/self.popt_prf["entries"]
+
+        expect = np.array([num_integ(func, bin_edges[i], bin_edges[i+1], 100) for i in range(len(bin_edges)-1)])*np.sum(hi)*norm
+        mask = hi != 0
+        model = func(bin_edges)
+        qual = (np.sum(((model[mask] - hi[mask])) ** 2 / hi[mask]))/np.sum((hi[1:] - expect) ** 2 / expect ** 2)
+        if qual < 1e-2 or qual > 1e2:
+            return (np.sum(((model[mask] - hi[mask])) ** 2 / hi[mask]))/np.sum((hi[:-1] - expect) ** 2 / expect ** 2)
+        else:
+            return qual
+
+
+
+
+
