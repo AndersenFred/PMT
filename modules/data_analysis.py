@@ -1,19 +1,18 @@
 import numpy as np
 import h5py
 import matplotlib.pyplot as plt
-import scipy.optimize as opt
 import math
 from datetime import datetime
 import scipy.constants
-import sys
 from modules.pmt_resp_func import ChargeHistFitter
-e = scipy.constants.e
-import time
 from scipy.optimize import curve_fit as curve_fit
 import os
 import multiprocessing as mp
+e = scipy.constants.e
+
 
 class WavesetReader:
+
     def __init__(self, h5_filename):
         self.filename = h5_filename
         self._wavesets = None
@@ -34,15 +33,18 @@ class WavesetReader:
             y_off = f[f"{key}/waveform_info/y_off"][()]
             try:
 
-                fit_results = (f[key]['fit_results']['gain'][()],f[key]['fit_results']['nphe'][()],f[key]['fit_results']['gain_err'][()],f[key]['fit_results']['int_ranges'][()])
+                fit_results = (f[key]['fit_results']['gain'][()], f[key]['fit_results']['nphe'][()], f[key]['fit_results']['gain_err'][()], f[key]['fit_results']['int_ranges'][()])
             except KeyError:
                 fit_results = None
-        return Waveset(raw_waveforms, v_gain, h_int,y_off = 0, fit_results = fit_results)
-def linear(x,m,t):
+        return Waveset(raw_waveforms, v_gain, h_int, y_off = y_off, fit_results = fit_results)
+
+
+def linear(x, m, t):
     return m*x+t
 
+
 class Waveset:
-    def __init__(self, raw_waveforms, v_gain, h_int,y_off, fit_results = None):
+    def __init__(self, raw_waveforms, v_gain, h_int, y_off, fit_results = None):
         self.raw_waveforms = raw_waveforms
         self.v_gain = v_gain
         self.h_int = h_int
@@ -51,7 +53,6 @@ class Waveset:
         self._waveforms = None
         self.fit_results = fit_results
 
-
     @property
     def waveforms(self):
         if self._waveforms is None:
@@ -59,9 +60,10 @@ class Waveset:
         return self._waveforms
 
     def zeroed_waveforms(self, baseline_min, baseline_max):
-        return (self.waveforms.T- np.mean(self.waveforms[:, baseline_min:baseline_max], axis=1)).T
+        return (self.waveforms.T - np.mean(self.waveforms[:, baseline_min:baseline_max], axis=1)).T
 
-def save_rawdata_to_file( h5_filename: str, data, measurement_time:float, y_off:float, YMULT:float, samplerate:float, HV:int)-> None:
+
+def save_rawdata_to_file(h5_filename: str, data, measurement_time: float, y_off: float, YMULT: float, samplerate: float, HV: int)-> None:
     """
     saves rawdata to file
 
@@ -75,7 +77,7 @@ def save_rawdata_to_file( h5_filename: str, data, measurement_time:float, y_off:
         time that measurment took
     y_off: float
         offset to be added on the measurment
-    YMUILT: float
+    YMULT: float
         conversion factor form raw data to data
     samplerate: float
         samplerate on which the measurment were taken
@@ -109,7 +111,7 @@ def add_fit_results(h5_filename: str, HV:int, gain:float, nphe:float, gain_err:f
         resulting gain
     gain_err: float
         error on gain
-    int_range: array
+    int_ranges: array
         integraton range
     """
     with h5py.File(h5_filename, "a") as f:
@@ -134,7 +136,7 @@ def rewrite_fit_results(h5_filename, HV, gain, nphe, gain_err, int_ranges):
         resulting gain
     gain_err: float
         error on gain
-    int_range: array
+    int_ranges: array
         integraton range
     """
     with h5py.File(h5_filename, "r+") as f:
@@ -149,7 +151,7 @@ def rewrite_fit_results(h5_filename, HV, gain, nphe, gain_err, int_ranges):
         fit_results["int_ranges"] = int_ranges
         f.close()
 
-def x_y_values(data,  y_off:float, YMULT:float, Measurement_time:float = None, samplerate:float = None, h_int:float = None):
+def x_y_values(data,  y_off:float, YMULT:float, measurement_time:float = None, samplerate:float = None, h_int:float = None):
     '''
     converges raw data to x and y data
     !!!Either Measurement_time or samplerate or h_int must not be None!!!
@@ -162,7 +164,7 @@ def x_y_values(data,  y_off:float, YMULT:float, Measurement_time:float = None, s
         time that measurment took
     y_off: float, default: None
         offset to be added on the measurment
-    YMUILT: float, default: None
+    YMULT: float, default: None
         conversion factor form raw data to data
     samplerate: float, default: None
         samplerate on which the measurment were taken
@@ -175,8 +177,8 @@ def x_y_values(data,  y_off:float, YMULT:float, Measurement_time:float = None, s
         x x-Data of input
         y y-Data of input
     '''
-    if not Measurement_time == None:
-        x = np.linspace(0,Measurement_time,len(data[0,:]))
+    if not measurement_time == None:
+        x = np.linspace(0,measurement_time,len(data[0,:]))
     elif not samplerate == None:
         x = np.linspace(0,len(data[0,:])/samplerate,len(data[0,:]))
     elif not h_int == None:
@@ -187,7 +189,7 @@ def x_y_values(data,  y_off:float, YMULT:float, Measurement_time:float = None, s
     return x,y
 
 
-def mean_plot(y, int_ranges = (60, 180, 200, 350)):
+def mean_plot(y, int_ranges = (60, 180, 200, 350), path = None):
     """
     plot mean of input with standard derivation
 
@@ -208,7 +210,11 @@ def mean_plot(y, int_ranges = (60, 180, 200, 350)):
     y_std = np.std(y,axis=0)/np.sqrt(len(y))
     ax.plot(y_data)
     ax.fill_between(np.linspace(1,len(y_data),len(y_data)), y_data-y_std, y_data + y_std, color='gray', alpha=0.2)
-    plt.show(block = False)
+    if not path == None:
+        fig.savefig(path + '/mean_plot.pdf' )
+        plt.close()
+    else:
+        plt.show(block = False)
 
 
 def mp_var_int_range(waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h_int, interval_sig_min,interval_sig_max, number_sig_min, number_sig_max, number_of_processes = os.cpu_count(), print_level = 0):
@@ -224,11 +230,11 @@ def mp_var_int_range(waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h
         the numimum and maximum values for pedestals
     sig_min_start: int
         start of Integration
-    sig_max: int
+    sig_max_start: int
         ending value for integraton
     h_int: float
         horizontal interval of data
-    interval: int, default: 10
+    interval_sig_min, interval_sig_max: int, default: 10
         step between integrations
     number_sig_min: int
         number of integrations in sig_min direction
@@ -280,11 +286,11 @@ def hist_variable_values_mp(queue, waveforms, ped_min, ped_max, sig_min_start, s
         the numimum and maximum values for pedestals
     sig_min_start: int
         start of Integration
-    sig_max: int
+    sig_max_start: int
         ending value for integraton
     h_int: float
         horizontal interval of data
-    interval: int, default: 10
+    interval_sig_min, interval_sig_max: int, default: 10
         step between integrations
     number_sig_min: int
         number of integrations in sig_min direction
@@ -367,42 +373,51 @@ def plot_hist_variable_values(sig_min, sig_max, gains, nphes, h_int ,gain_errs, 
     if show:
         plt.show()
 
-def hist(waveforms, ped_min=0, ped_max= 200, sig_min= 300, sig_max=600, bins = 200, histo_range= None, plot = True, name = None,title = None):
+def hist(waveforms, ped_min=0, ped_max= 200, sig_min= 250, sig_max=500, bins = 200, histo_range= None, plot = True,path = None,):
     int_ranges = (ped_min, ped_max, sig_min, sig_max)
     try:
         if(plot):
             mean_plot(waveforms, int_ranges)
             ped_min, ped_max, sig_min, sig_max = [int(i) for i in input('set integration ranges: <ped_min, ped_max, sig_min, sig_max>\n').split(', ')]
+        elif not path == None:
+                mean_plot(waveforms, int_ranges, path = path)
         if ped_min<0 or ped_max<0 or sig_min<0 or sig_max<0:
             ped_min, ped_max, sig_min, sig_max = [int(i) for i in int_ranges]
+
     except ValueError:
         print(f'ValueError: used integration ranges {int_ranges}')
     return histogramm(waveforms, ped_min, ped_max, sig_min, sig_max, bins, histo_range)
 
-def histogramm(waveforms, ped_min=0, ped_max= 100, sig_min= 190, sig_max=400, bins = 200, histo_range= None):
+def histogramm(waveforms, ped_min=0, ped_max= 100, sig_min= 190, sig_max=400, bins = 200, histo_range= None, mask = -0.5):
     ped_sig_ratio = (ped_max - ped_min) / (sig_max - sig_min)
     pedestals = (np.sum(waveforms[:, ped_min:ped_max], axis=1))
     charges = -(np.sum(waveforms[:, sig_min:sig_max], axis=1))+pedestals/ped_sig_ratio
+    if mask != None:
+        charges = charges[charges>mask]
     hi, bin_edges = np.histogram(charges, range = histo_range, bins = bins)
-    bin_edges = (bin_edges-(bin_edges[1])/2)[:-1]
-    return hi, bin_edges, np.array([ped_min,ped_max,sig_min,sig_max])
+    new_bin_edges = (bin_edges-(bin_edges[1])/2)[:-1]
+    return hi, new_bin_edges, np.array([ped_min,ped_max,sig_min,sig_max])
 
-def hist_fitter(hi, bin_edges, h_int, plot = True,print_level = 0, valley = None, path = None):#input has to be from hist()
+def hist_fitter(hi, bin_edges, h_int, plot = True,print_level = 0, valley = None, path = None, title = None):#input has to be from hist()
     fitter = ChargeHistFitter()
     fitter.pre_fit(bin_edges, hi, print_level = print_level, valley = valley)
     fit_function = fitter.fit_pmt_resp_func(bin_edges,hi, print_level = print_level)
     fitter.opt_ped_values
+    if print_level:
+        print('Fit quality: ',  fitter.quality_check(bin_edges, hi))
     if (plot or not path == None):
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.semilogy(bin_edges, hi)
         ax.plot(bin_edges,fitter.opt_prf_values)
+        if not title == None:
+            plt.title(title)
         plt.xlabel("ADC Channel")
         plt.ylabel("Number of events")
         plt.ylim(.1,1e5)
         if plot:
             plt.show(block = True)
         if not path == None:
-            fig.savefig(path + 'Histogramm_mit_Fit.pdf' )
+            fig.savefig(path + '/Histogramm_mit_Fit.pdf' )
         plt.close(fig)
     gain = fitter.popt_prf['spe_charge']*h_int/(50*e)
     if (gain < 0 or gain >1e7) and valley is None:
@@ -410,7 +425,7 @@ def hist_fitter(hi, bin_edges, h_int, plot = True,print_level = 0, valley = None
     nphe = fitter.popt_prf['nphe']
     gain_err = np.sqrt(fitter.pcov_prf['spe_charge', 'spe_charge'])*h_int/(50*e)
     if not path == None:
-        np.savetxt(path + '_daten_histogramm.txt',[bin_edges, hi])
+        np.savetxt(path + '/daten_histogramm.txt',np.array([bin_edges, hi]))
     return gain, nphe, gain_err
 
 
@@ -441,7 +456,7 @@ def log_transit_spread(name,SN,n,N,bins,binwidth,p0,cov):
     f.close()
 
 
-def analysis_complete_data(h5_filename, nom_manuf_hv = None,reanalyse= False, saveresults = True, nominal_gains = [3e6], SN = 'AB2363'):
+def analysis_complete_data(h5_filename, nom_manuf_hv = None,reanalyse= False, saveresults = True, nominal_gains = [3e6], SN = 'AB2363', plot = False, log = True):
     f = WavesetReader(h5_filename)
     hv = []
     gains = []
@@ -449,9 +464,13 @@ def analysis_complete_data(h5_filename, nom_manuf_hv = None,reanalyse= False, sa
     gain_errs = []
     int_range = []
     for key in f.wavesets:
-        path = f'/media/pmttest/TOSHIBA EXT/Messdaten/KM3Net_{SN}/HV={key}_'
+        path = f'/media/pmttest/TOSHIBA EXT/Messdaten/KM3Net_{SN}/{key}'
         try:
             os.mkdir(f'/media/pmttest/TOSHIBA EXT/Messdaten/KM3Net_{SN}')
+        except FileExistsError:
+            pass
+        try:
+            os.mkdir(path)
         except FileExistsError:
             pass
         waveset = f[key]
@@ -467,9 +486,9 @@ def analysis_complete_data(h5_filename, nom_manuf_hv = None,reanalyse= False, sa
         else:
             waveforms = waveset.waveforms
             h_int = waveset.h_int
-            y,x, int_ranges = hist(waveforms, plot = False)
+            y,x, int_ranges = hist(waveforms, plot = False, path = path)
             int_range.append(int_ranges)
-            gain, nphe, gain_err = hist_fitter(y,x,h_int, path = path, plot = False)
+            gain, nphe, gain_err = hist_fitter(y,x,h_int, path = path, plot = plot, title = f'SN: {SN}, HV: {key}')
             if saveresults and not waveset.fit_results == None:
                 rewrite_fit_results(h5_filename = h5_filename, HV = key, gain = gain, nphe = nphe, gain_err = gain_err, int_ranges = int_ranges)
             elif saveresults:
@@ -483,34 +502,32 @@ def analysis_complete_data(h5_filename, nom_manuf_hv = None,reanalyse= False, sa
     for nominal_gain in nominal_gains:
         nominal_hvs.append(10**((np.log10(nominal_gain) - p_opt[1])/ p_opt[0]))
     #print(nominal_hvs)
-
-    fig, ax = plt.subplots(figsize = (10,5))
-    for i in range(len(nominal_hvs)):
-        ax.axhline(np.log10(nominal_gains[i]), color="black", ls="--")
-        ax.axvline(np.log10(nominal_hvs[i]), color="black", ls="--")
-    #gains,gain_errs = np.array(gains), np.array(gain_errs)
-    #gain_err_plus = np.log10(gains+gain_errs)-np.log10(gains)
-    #gain_err_minus = np.log10(gains-gain_errs)-np.log10(gains)
-    ax.plot(np.log10(hv), np.log10(gains),'x')
-    #print(np.log10(gains)-np.log10(gain_errs))
-    hv_min=np.log10(min(hv)-50)
-    hv_max=np.log10(max(hv)+50)
-    xs = np.linspace(hv_min, hv_max, 1000)
-    gain_min=hv_min*p_opt[0] +p_opt[1]
-    gain_max=hv_max*p_opt[0] +p_opt[1]
-    if not nom_manuf_hv == None:
-        manuf_gain=10**(np.log10(nom_manuf_hv)*p_opt[0] +p_opt[1])
-        ax.vlines(x=np.log10(nom_manuf_hv), ymin=gain_min,ymax=np.log10(manuf_gain), colors="red", linestyles="dashed")
-    plt.title("gainslope "+SN)
-    ax.plot(xs, linear(xs, *p_opt))
-    plt.axis([hv_min, hv_max, gain_min, gain_max])
-    plt.xlabel("log10(HV)")
-    plt.ylabel("log10(gain)")
-    plt.show()
-    fig.savefig(f'/media/pmttest/TOSHIBA EXT/Messdaten/KM3Net_{SN}/gainslope_{SN}.pdf')
+    if plot:
+        fig, ax = plt.subplots(figsize = (10,5))
+        for i in range(len(nominal_hvs)):
+            ax.axhline(np.log10(nominal_gains[i]), color="black", ls="--")
+            ax.axvline(np.log10(nominal_hvs[i]), color="black", ls="--")
+        ax.plot(np.log10(hv), np.log10(gains), 'x')
+        hv_min=np.log10(min(hv)-50)
+        hv_max=np.log10(max(hv)+50)
+        xs = np.linspace(hv_min, hv_max, 1000)
+        gain_min=hv_min*p_opt[0] +p_opt[1]
+        gain_max=hv_max*p_opt[0] +p_opt[1]
+        if not nom_manuf_hv == None:
+            manuf_gain=10**(np.log10(nom_manuf_hv)*p_opt[0] +p_opt[1])
+            ax.vlines(x=np.log10(nom_manuf_hv), ymin=gain_min,ymax=np.log10(manuf_gain), colors="red", linestyles="dashed")
+        plt.title("gainslope "+SN)
+        ax.plot(xs, linear(xs, *p_opt))
+        plt.axis([hv_min, hv_max, gain_min, gain_max])
+        plt.xlabel("log10(HV)")
+        plt.ylabel("log10(gain)")
+        plt.show()
+        fig.savefig(f'/media/pmttest/TOSHIBA EXT/Messdaten/KM3Net_{SN}/gainslope_{SN}.pdf')
     err_nom_hv = err_hv(gain_nom = nominal_gain,gain = gains,gain_errs = gain_errs, hvs = hv)
-    log_complete_data(name = h5_filename,hvs = hv,err_nom_hv = err_nom_hv, gains=gains, gain_errs = gain_errs, nphe = nphes,int_ranges = np.array(int_range),h_int = h_int, p_opt = p_opt, cov = cov,nominal_gain = nominal_gains, nominal_hv = nominal_hvs)
-    print(f'nominal HV: {nominal_hvs} pm {err_nom_hv} for nominal gain: {nominal_gains}')
+    if log:
+        name = f'/media/pmttest/TOSHIBA EXT/Messdaten/KM3Net_{SN}/log'
+        log_complete_data(name = name,hvs = hv,err_nom_hv = err_nom_hv, gains=gains, gain_errs = gain_errs, nphe = nphes,int_ranges = np.array(int_range),h_int = h_int, p_opt = p_opt, cov = cov,nominal_gain = nominal_gains, nominal_hv = nominal_hvs)
+    print(f'{SN}: nominal HV: {nominal_hvs} pm {err_nom_hv} for nominal gain: {nominal_gains}')
     return gains, nphes, hv, gain_errs
 
 def err_hv(gain, gain_errs, gain_nom, hvs):
@@ -518,7 +535,7 @@ def err_hv(gain, gain_errs, gain_nom, hvs):
     return 10**np.sqrt(cov[1,1])
 
 def log_complete_data(name, hvs, gains, gain_errs,err_nom_hv, nphe,int_ranges,h_int, p_opt, cov,nominal_gain, nominal_hv):
-    name = '{}_log.txt'.format(name)
+    name = '{}.txt'.format(name)
     f = open(name, 'a')
     int_time = (int_ranges[:,3]-int_ranges[:,2])*h_int*1e9
     gains = [np.format_float_scientific(i,4) for i in gains]
@@ -527,6 +544,8 @@ def log_complete_data(name, hvs, gains, gain_errs,err_nom_hv, nphe,int_ranges,h_
     text = f'Date: {datetime.now()}\n HV: {hvs}\n gains: {gains}\n gain_errs: {gain_errs}\n nphes: {np.round(nphe,2)}\n int ranges: {int_ranges};\n int_ranges in ns {int_ranges*h_int*1e9}\n integration time in ns {int_time}\n fit results: {np.round(p_opt,4)}\n cov: {np.round(cov,4)}\n nominal gain: {nominal_gain}\n nominal hv: {np.round(nominal_hv,0)}pm{np.round(err_nom_hv,2)}\n\n\n'
     f.write(text)
     f.close()
+
+
 
 if __name__ == '__main__':
     pass
