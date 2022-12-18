@@ -217,7 +217,7 @@ def mean_plot(y, int_ranges = (60, 180, 200, 350), path = None):
         plt.show(block = False)
 
 
-def mp_var_int_range(waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h_int, interval_sig_min,interval_sig_max, number_sig_min, number_sig_max, number_of_processes = os.cpu_count(), print_level = 0):
+def mp_var_int_range(waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h_int, interval_sig_min,interval_sig_max, number_sig_min, number_sig_max, SN,HV,number_of_processes = os.cpu_count(), print_level = 0,):
     """
     calculates the histogramm of charges with a variable integration borders
     Works on multiple threads
@@ -230,11 +230,11 @@ def mp_var_int_range(waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h
         the numimum and maximum values for pedestals
     sig_min_start: int
         start of Integration
-    sig_max_start: int
+    sig_max: int
         ending value for integraton
     h_int: float
         horizontal interval of data
-    interval_sig_min, interval_sig_max: int, default: 10
+    interval: int, default: 10
         step between integrations
     number_sig_min: int
         number of integrations in sig_min direction
@@ -254,7 +254,7 @@ def mp_var_int_range(waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h
     procs = []
     results = {}
     for i in range(number_of_processes):
-        proc = mp.Process(target = hist_variable_values_mp, args = (queue, waveforms, ped_min, ped_max, sig_min_start-i*chunks,sig_max_start,h_int,i, interval_sig_min,interval_sig_max ,chunks,  number_sig_max, print_level))
+        proc = mp.Process(target = hist_variable_values_mp, args = (queue, waveforms, ped_min, ped_max, sig_min_start-i*chunks,sig_max_start,h_int,i, interval_sig_min,interval_sig_max ,chunks,  number_sig_max, print_level, SN, HV))
         procs.append(proc)
         proc.start()
     for i in range(number_of_processes):
@@ -273,7 +273,7 @@ def mp_var_int_range(waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h
         gain_errs = np.append(gain_errs,results[i][1],axis = 0)
     return sig_min, sig_max, np.flip(gains, axis = 0), np.flip(nphes, axis = 0),np.flip(gain_errs, axis = 0)
 
-def hist_variable_values_mp(queue, waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h_int,p, interval_sig_min,interval_sig_max, number_sig_min, number_sig_max, print_level):
+def hist_variable_values_mp(queue, waveforms, ped_min, ped_max, sig_min_start, sig_max_start,h_int,p, interval_sig_min,interval_sig_max, number_sig_min, number_sig_max, print_level, SN, HV):
     """
     auxiliary method for mp_var_int_range
 
@@ -286,11 +286,11 @@ def hist_variable_values_mp(queue, waveforms, ped_min, ped_max, sig_min_start, s
         the numimum and maximum values for pedestals
     sig_min_start: int
         start of Integration
-    sig_max_start: int
+    sig_max: int
         ending value for integraton
     h_int: float
         horizontal interval of data
-    interval_sig_min, interval_sig_max: int, default: 10
+    interval: int, default: 10
         step between integrations
     number_sig_min: int
         number of integrations in sig_min direction
@@ -306,8 +306,12 @@ def hist_variable_values_mp(queue, waveforms, ped_min, ped_max, sig_min_start, s
     for i in range(int(number_sig_min)):
         for j in range(int(number_sig_max)):
             try:
-                x,y, int_ranges = histogramm(waveforms, ped_min, ped_max, sig_min_start-interval_sig_min*i, sig_max_start+interval_sig_max*j)
-                gain, nphe, gain_err = hist_fitter(x,y,h_int, plot = False)
+                hi,bin_edges, int_ranges = histogramm(waveforms, ped_min, ped_max, sig_min_start-interval_sig_min*i, sig_max_start+interval_sig_max*j)
+                gain, nphe, gain_err = hist_fitter(hi,bin_edges,h_int, plot = False,valley = bin_edges[np.argmin(hi[np.argmax(hi):int(len(hi)/5)])+np.argmax(hi)])
+                if (gain<0 or gain > 1e7 or nphe > 2 or gain_err > 1e6):
+                    f = open('Strange values.txt', 'a')
+                    f.write(f'Strange value occured with gain = {gain}, nphes = {nphe} at HV = {HV}, SN = {SN} with sig_min = {sig_min_start-interval_sig_min*i}, sig_max = {sig_max_start+interval_sig_max*j}\n')
+                    f.close()
                 if gain < 0:
                     continue
                 if gain > 1e8:
@@ -327,13 +331,40 @@ def hist_variable_values_mp(queue, waveforms, ped_min, ped_max, sig_min_start, s
     queue.put({p: (gains, gain_errs, nphes)})
 
 
-
-def plot_hist_variable_values(sig_min, sig_max, gains, nphes, h_int ,gain_errs, name= None, nrows = 3, show = False, waveforms= None):
+def plot_hist_variable_values(sig_min, sig_max, gains, nphes, gain_errs, h_int , name= None, nrows = 3, show = False, waveforms= None, threshold = 0.1):
+    """
+    plots the results of hist_variable_values with 3 or 4 rows
+    if nrows == 3 there are 3 scatter-plots, if nrows == 4
+    Parameters
+    ----------
+    sig_min: np.array
+        the values used for sig_min with len = x
+    sig_min: np.array
+        the values used for sig_max with len = y
+    gains, nphes, gain_errs: np.array with shape = (x,y)
+        the values for gain, nphes and gain_errors
+    h_int: int
+        horizontal interval between points
+    name: Str, default: None
+        name where the plot has to be saved
+    nrows: int, default: 3
+        number of rows to be plotted. if nrows equals 4, waveforms must not ne None. with nrows equals 4 the mean_waveforms of signal will be in fourth plot.
+        nrows has to be either 3 or 4
+    show: bool, default: False
+        determines if the plot will be shown
+    waveforms: np.array, default: None
+        waveforms to be plotten if nrows equals 4
+    threshold: int, default: 0.1
+        threshold to determin if a single waveform contains a signal
+    Returns
+    -------
+    None
+    """
     if nrows != 3 and nrows !=4:
         raise ValueError(f'nrows has to be either 3 or 4. nrows = {nrows}')
     try:
         if (nrows == 4 and waveforms == None):
-            raise ValueError(f'if nrows equals 4, waveforms must not ne None')
+            raise TypeError(f'if nrows equals 4, waveforms must not ne None')
     except ValueError:
         pass
     X,Y = np.meshgrid(sig_min, sig_max)
@@ -347,7 +378,7 @@ def plot_hist_variable_values(sig_min, sig_max, gains, nphes, h_int ,gain_errs, 
     fig.colorbar(p, label = r'gain $10^6$', orientation = "vertical", ax = ax[0])
 
     secy_2 = ax[1].secondary_yaxis('right', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
-    secy_2.set_ylabel('"Integration end in ns')
+    secy_2.set_ylabel('Integration end in ns')
     secx_2 = ax[1].secondary_xaxis('top', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
     p = ax[1].pcolormesh(X,Y,gain_errs.T/1e6,shading='auto')
     ax[1].set_ylabel("Integration end in sample")
@@ -367,11 +398,18 @@ def plot_hist_variable_values(sig_min, sig_max, gains, nphes, h_int ,gain_errs, 
         secy_3.set_xlabel('time in ns')
         ax[3].set_xlabel('time in sample')
         ax[3].set_ylabel('Voltage in V')
-        ax[3].plot(np.mean(waveforms, axis = 0))
+        wf = waveforms[np.sum(waveforms, axis = 1)*h_int/(50*e)>threshold]
+        ax[3].plot(np.mean(wf, axis = 0))
+        y_std = np.std(wf, axis = 0)/np.sqrt(len(wf))
+        wf = np.mean(wf, axis = 0)
+        ax[3].fill_between(np.linspace(0,len(wf),len(wf)), wf-y_std, wf + y_std, color='gray', alpha=0.2)
     if name != None:
         plt.savefig(name)
     if show:
         plt.show()
+    else:
+        plt.close()
+
 
 def hist(waveforms, ped_min=0, ped_max= 200, sig_min= 250, sig_max=500, bins = 200, histo_range= None, plot = True,path = None,):
     int_ranges = (ped_min, ped_max, sig_min, sig_max)
