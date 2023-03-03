@@ -8,6 +8,7 @@ from modules.pmt_resp_func import ChargeHistFitter
 from scipy.optimize import curve_fit as curve_fit
 import os
 import multiprocessing as mp
+from scipy import signal
 e = scipy.constants.e
 
 
@@ -32,7 +33,6 @@ class WavesetReader:
             h_int = f[f"{key}/waveform_info/h_int"][()]
             y_off = f[f"{key}/waveform_info/y_off"][()]
             try:
-
                 fit_results = (f[key]['fit_results']['gain'][()], f[key]['fit_results']['nphe'][()], f[key]['fit_results']['gain_err'][()], f[key]['fit_results']['int_ranges'][()])
             except KeyError:
                 fit_results = None
@@ -40,7 +40,7 @@ class WavesetReader:
 
 
 def linear(x, m, t):
-    return m*x+t
+    return m*(x-t)
 
 
 class Waveset:
@@ -97,7 +97,7 @@ def save_rawdata_to_file(h5_filename: str, data, measurement_time: float, y_off:
     wf_info["y_off"] = y_off
     f.close()
 
-def add_fit_results(h5_filename: str, HV:int, gain:float, nphe:float, gain_err:float, int_ranges) -> None:
+def add_fit_results(h5_filename: str, HV:int, gain:float, nphe:float, gain_err:float, int_ranges:list) -> None:
     """
     saves the fit results
 
@@ -111,43 +111,33 @@ def add_fit_results(h5_filename: str, HV:int, gain:float, nphe:float, gain_err:f
         resulting gain
     gain_err: float
         error on gain
-    int_ranges: array
+    int_range: array
         integraton range
     """
     with h5py.File(h5_filename, "a") as f:
-        fit_results = f.create_group(f"{HV}/fit_results")
+        try:
+            fit_results = f.create_group(f"{HV}/fit_results")
+        except:
+            fit_results = f[f"{HV}/fit_results"]
+        try:
+            del fit_results["nphe"]
+        except KeyError as e:
+            print(e)
+        try:
+            del fit_results["gain"]
+        except KeyError as e:
+            print(e)
+        try:
+            del fit_results["gain_err"]
+        except KeyError as e:
+            print(e)
+        try:
+            del fit_results["int_ranges"]
+        except KeyError as e:
+            print(e)
         fit_results["nphe"] = nphe
         fit_results["gain"] = gain
         fit_results["gain_err"] = gain_err
-        fit_results["int_ranges"] = int_ranges
-        f.close()
-
-def rewrite_fit_results(h5_filename, HV, gain, nphe, gain_err, int_ranges):
-    """
-    deletes old fit results and saves new
-
-    Parameters
-    ----------
-    h5_filename: string
-        folder an filename where to save the data
-    HV: int
-        voltage on which data were taken
-    gain: float
-        resulting gain
-    gain_err: float
-        error on gain
-    int_ranges: array
-        integraton range
-    """
-    with h5py.File(h5_filename, "r+") as f:
-        fit_results = f[f"{HV}/fit_results"]
-        del fit_results["nphe"]
-        fit_results["nphe"] = nphe
-        del fit_results["gain"]
-        fit_results["gain"] = gain
-        del fit_results["gain_err"]
-        fit_results["gain_err"] = gain_err
-        del fit_results["int_ranges"]
         fit_results["int_ranges"] = int_ranges
         f.close()
 
@@ -328,8 +318,89 @@ def hist_variable_values_mp(queue, waveforms, ped_min, ped_max, sig_min_start, s
                 continue
             except TypeError:
                 continue
+            except RuntimeError:
+                continue
     queue.put({p: (gains, gain_errs, nphes)})
 
+def var_sig_max(ped_min, ped_max, sig_min, sig_max_start, interval_sig_max, number_sig_max, SN,path = '/media/pmttest/TOSHIBA EXT/Messdaten/', print_level = 0):
+    reader = WavesetReader(path + 'KM3Net_{}.h5'.format(SN))
+    queue = mp.Queue()
+    procs = []
+    results = {}
+    for HV in reader.wavesets:
+        proc = mp.Process(target = var_sig_max_aux, args = (queue, reader[HV].waveforms, ped_min, ped_max, sig_min,sig_max_start, reader[HV].h_int, interval_sig_max , number_sig_max, print_level, HV,SN))
+        procs.append(proc)
+        proc.start()
+    for i in range(len(reader.wavesets)):
+        results.update(queue.get())
+    for i in procs:
+        i.join()
+    return results
+
+def var_sig_max_aux(queue, waveforms, ped_min, ped_max, sig_min, sig_max_start, h_int, interval_sig_max , number_sig_max, print_level, HV,SN, path = '/media/pmttest/TOSHIBA EXT/Messdaten/', plot = 1):
+    gains = np.full((number_sig_max), np.nan)
+    nphes = np.full((number_sig_max), np.nan)
+    gain_errs = np.full((number_sig_max), np.nan)
+    sig_max = []
+    f = lambda x: (x * (h_int * 1e9) % 2 == 0)
+    for i in range(number_sig_max):
+        try:
+            hi, bin_edges, int_ranges = histogramm(waveforms, ped_min, ped_max, sig_min, sig_max_start + interval_sig_max * i)
+            gain, nphe, gain_err = hist_fitter(hi, bin_edges, h_int, plot = False, path = plot * f(sig_max_start + interval_sig_max * i)*(path + f'KM3Net_{SN}/{HV}/sig_max_{sig_max_start + interval_sig_max * i}_' ), print_level = print_level, valley=bin_edges[np.argmin(hi[np.argmax(hi):int(len(hi) / 5)]) + np.argmax(hi)])
+            if gain < 0:
+                continue
+            if gain > 1e8:
+                print('Strange value occured at:')
+                print('sig_max = ', sig_max_start + interval_sig_max * i)
+                print('gain = ', gain)
+                print(int_ranges)
+                continue
+            gains[i] = gain
+            nphes[i] = nphe
+            gain_errs[i] = gain_err
+            sig_max.append(sig_max_start + interval_sig_max * i)
+        except ValueError:
+            continue
+        except TypeError:
+            continue
+        except RuntimeError:
+            continue
+    queue.put({HV: (gains, gain_errs, nphes, np.array(sig_max))})
+
+def plot_hist_variable_sig_max(results, SN, path =  '/media/pmttest/TOSHIBA EXT/Messdaten/KM3Net_{}.h5', sig_min = 250):
+    reader = WavesetReader(path.format(SN))
+    for HV in results.keys():
+        waveforms = reader[HV].waveforms
+        h_int = reader[HV].h_int
+        fig, ax = plt.subplots(figsize=(10, 15), nrows=4, constrained_layout=True)
+        ax[0].set_title(f'Variating integration ending for SN: {SN}, HV: {HV}, with signal min: {sig_min}')
+        ax[0].plot(results[HV][3], results[HV][0][~np.isnan(results[HV][0])]/1e6)
+        secx = ax[0].secondary_xaxis('top', functions=(lambda x: x * h_int * 1e9, lambda x: x / (h_int * 1e9)))
+        secx.set_xlabel('Integration end in ns')
+        ax[0].set_ylabel(r'Gain in $10^6$')
+        ax[0].set_xlabel("Integration end in sample")
+
+        ax[1].plot(results[HV][3], results[HV][1][~np.isnan(results[HV][1])]/1e6)
+        secx = ax[1].secondary_xaxis('top', functions=(lambda x: x * h_int * 1e9, lambda x: x / (h_int * 1e9)))
+        secx.set_xlabel('Integration end in ns')
+        ax[1].set_ylabel(r'Gain Error in $10^6$')
+        ax[1].set_xlabel("Integration end in sample")
+
+        ax[2].plot(results[HV][3], results[HV][2][~np.isnan(results[HV][2])])
+        secx = ax[2].secondary_xaxis('top', functions=(lambda x: x * h_int * 1e9, lambda x: x / (h_int * 1e9)))
+        secx.set_xlabel('Integration end in ns')
+        ax[2].set_ylabel('Number of Photoelektrons')
+        ax[2].set_xlabel("Integration end in sample")
+
+        wf = waveforms[np.sum(waveforms, axis=1) * h_int / (50 * e) > 0.1]
+        ax[3].plot(np.mean(wf, axis=0))
+        ax[3].set_title('Mean Plot')
+        secy_3 = ax[3].secondary_xaxis('top', functions = (lambda x: x*h_int*1e9, lambda x: x/(h_int*1e9)))
+        secy_3.set_xlabel('time in ns')
+        ax[3].set_xlabel('time in sample')
+        ax[3].set_ylabel('Voltage in V')
+        fig.savefig(path[:-3].format(SN) + f'/{HV}/variating sig max.pdf')
+        plt.close()
 
 def plot_hist_variable_values(sig_min, sig_max, gains, nphes, gain_errs, h_int , name= None, nrows = 3, show = False, waveforms= None, threshold = 0.1):
     """
@@ -410,6 +481,10 @@ def plot_hist_variable_values(sig_min, sig_max, gains, nphes, gain_errs, h_int ,
     else:
         plt.close()
 
+def moving_average(data, window):
+    weights = np.repeat(1.0, window)/window
+    ma = np.convolve(data, weights, 'valid')
+    return ma
 
 def hist(waveforms, ped_min=0, ped_max= 200, sig_min= 250, sig_max=500, bins = 200, histo_range= None, plot = True,path = None,):
     int_ranges = (ped_min, ped_max, sig_min, sig_max)
@@ -421,49 +496,64 @@ def hist(waveforms, ped_min=0, ped_max= 200, sig_min= 250, sig_max=500, bins = 2
                 mean_plot(waveforms, int_ranges, path = path)
         if ped_min<0 or ped_max<0 or sig_min<0 or sig_max<0:
             ped_min, ped_max, sig_min, sig_max = [int(i) for i in int_ranges]
-
     except ValueError:
         print(f'ValueError: used integration ranges {int_ranges}')
     return histogramm(waveforms, ped_min, ped_max, sig_min, sig_max, bins, histo_range)
 
-def histogramm(waveforms, ped_min=0, ped_max= 100, sig_min= 190, sig_max=400, bins = 200, histo_range= None, mask = -0.5):
+def histogramm(waveforms, ped_min=0, ped_max= 200, sig_min= 250, sig_max=500, bins = 200, range= None, plot = False, name = None,title = None, block = True):
     ped_sig_ratio = (ped_max - ped_min) / (sig_max - sig_min)
     pedestals = (np.sum(waveforms[:, ped_min:ped_max], axis=1))
     charges = -(np.sum(waveforms[:, sig_min:sig_max], axis=1))+pedestals/ped_sig_ratio
-    if mask != None:
-        charges = charges[charges>mask]
-    hi, bin_edges = np.histogram(charges, range = histo_range, bins = bins)
-    new_bin_edges = (bin_edges-(bin_edges[1])/2)[:-1]
-    return hi, new_bin_edges, np.array([ped_min,ped_max,sig_min,sig_max])
+    if plot:
+        fig, ax = plt.subplots(figsize= (10,5))
+        range = (np.min(charges),np.max(charges))
 
-def hist_fitter(hi, bin_edges, h_int, plot = True,print_level = 0, valley = None, path = None, title = None):#input has to be from hist()
-    fitter = ChargeHistFitter()
-    fitter.pre_fit(bin_edges, hi, print_level = print_level, valley = valley)
-    fit_function = fitter.fit_pmt_resp_func(bin_edges,hi, print_level = print_level)
-    fitter.opt_ped_values
-    if print_level:
-        print('Fit quality: ',  fitter.quality_check(bin_edges, hi))
-    if (plot or not path == None):
-        fig, ax = plt.subplots(figsize=(10, 5))
-        ax.semilogy(bin_edges, hi)
-        ax.plot(bin_edges,fitter.opt_prf_values)
+        ax.hist(charges, range=range, bins=200, log=True,color = 'b')
+        ax.hist(pedestals-np.mean(pedestals), range=range, bins=200, log=True,color = 'r')
+
+        plt.xlabel("Number of Photoelektrons")
+        plt.ylabel("Number of events")
         if not title == None:
             plt.title(title)
-        plt.xlabel("ADC Channel")
-        plt.ylabel("Number of events")
+        plt.show(block = block)
+        if not name == None:
+            print(f'saving {name}.pdf')
+            fig.savefig(name + '.pdf')
+    hi, bin_edges = np.histogram(charges, range = range, bins = bins)
+    bin_edges = (bin_edges-(bin_edges[1])/2)[:-1]
+    return hi, bin_edges, np.array([ped_min,ped_max,sig_min,sig_max])
+
+def hist_fitter(hi, bin_edges, h_int, plot = True, print_level = 0, valley = None, mask = None):#input has to be from hist()
+    fitter = ChargeHistFitter()
+    if mask != None:
+        hi = hi[bin_edges > mask]
+        bin_edges = bin_edges[bin_edges > mask]
+    fitter.pre_fit(bin_edges, hi, print_level = print_level, valley = valley)
+    fit_function = fitter.fit_pmt_resp_func(bin_edges,hi, print_level = print_level)
+    #fitter.opt_ped_values
+    #fitter.opt_spe_values
+    if (plot):
+        plt.semilogy(bin_edges, hi, label = 'Mesurments')
+        plt.plot(bin_edges,fitter.opt_prf_values, label = 'Fit')
+        if not valley == None:
+            plt.axvline(valley, label = 'valley')
         plt.ylim(.1,1e5)
-        if plot:
-            plt.show(block = True)
-        if not path == None:
-            fig.savefig(path + '/Histogramm_mit_Fit.pdf' )
-        plt.close(fig)
+        plt.legend
+        plt.show(block = False)
     gain = fitter.popt_prf['spe_charge']*h_int/(50*e)
-    if (gain < 0 or gain >1e7) and valley is None:
-        return hist_fitter(hi = hi, bin_edges = bin_edges, h_int = h_int, plot = plot ,print_level = print_level, valley = bin_edges[np.argmin(hi[np.argmax(hi):int(len(hi)/4)])])
     nphe = fitter.popt_prf['nphe']
-    gain_err = np.sqrt(fitter.pcov_prf['spe_charge', 'spe_charge'])*h_int/(50*e)
-    if not path == None:
-        np.savetxt(path + '/daten_histogramm.txt',np.array([bin_edges, hi]))
+    if (gain < 0 or gain >1e7 or nphe > 2) and valley is None:
+        return hist_fitter(hi = hi, bin_edges = bin_edges, h_int = h_int, plot = plot ,print_level = print_level, valley = bin_edges[np.argmin(hi[np.argmax(hi):int(len(hi)/5)])+np.argmax(hi)])
+    try:
+        gain_err = np.sqrt(fitter.pcov_prf['spe_charge', 'spe_charge'])*h_int/(50*e)
+        if gain_err >1e6 and valley == None:
+            return hist_fitter(hi = hi, bin_edges = bin_edges, h_int = h_int, plot = plot ,print_level = print_level, valley = bin_edges[np.argmin(hi[np.argmax(hi):int(len(hi)/5)])+np.argmax(hi)])
+    except TypeError:
+        if valley == None:
+            return hist_fitter(hi = hi, bin_edges = bin_edges, h_int = h_int, plot = plot ,print_level = print_level, valley = bin_edges[np.argmin(hi[np.argmax(hi):int(len(hi)/5)])+np.argmax(hi)])
+        return None, None, None
+    if gain < 0:
+        raise TypeError(f'gain = {gain}: Fit did not work correctly')
     return gain, nphe, gain_err
 
 
@@ -494,23 +584,17 @@ def log_transit_spread(name,SN,n,N,bins,binwidth,p0,cov):
     f.close()
 
 
-def analysis_complete_data(h5_filename, nom_manuf_hv = None,reanalyse= False, saveresults = True, nominal_gains = [3e6], SN = 'AB2363', plot = False, log = True):
+def analysis_complete_data(h5_filename, reanalyse= False, saveresults = False, nominal_gains = [3e6], mask = -0.1, **kwargs):
     f = WavesetReader(h5_filename)
     hv = []
     gains = []
     nphes = []
     gain_errs = []
     int_range = []
+    if not 'SN' in kwargs:
+        kwargs['SN'] = None
+    SN = kwargs['SN']
     for key in f.wavesets:
-        path = f'/media/pmttest/TOSHIBA EXT/Messdaten/KM3Net_{SN}/{key}'
-        try:
-            os.mkdir(f'/media/pmttest/TOSHIBA EXT/Messdaten/KM3Net_{SN}')
-        except FileExistsError:
-            pass
-        try:
-            os.mkdir(path)
-        except FileExistsError:
-            pass
         waveset = f[key]
         hv.append(int(key.split('_')[0]))
         if not reanalyse and not waveset.fit_results == None:
@@ -520,53 +604,101 @@ def analysis_complete_data(h5_filename, nom_manuf_hv = None,reanalyse= False, sa
             nphes.append(waveset.fit_results[1])
             gain_errs.append(waveset.fit_results[2])
             int_range.append(np.array(waveset.fit_results[3]))
-            print(f'HV: {key}, gain: {waveset.fit_results[0]}, nphes: {waveset.fit_results[1]}')
         else:
             waveforms = waveset.waveforms
             h_int = waveset.h_int
-            y,x, int_ranges = hist(waveforms, plot = False, path = path)
+            y,x, int_ranges = histogramm(waveforms, plot = False, bins = 200)
             int_range.append(int_ranges)
-            gain, nphe, gain_err = hist_fitter(y,x,h_int, path = path, plot = plot, title = f'SN: {SN}, HV: {key}')
-            if saveresults and not waveset.fit_results == None:
-                rewrite_fit_results(h5_filename = h5_filename, HV = key, gain = gain, nphe = nphe, gain_err = gain_err, int_ranges = int_ranges)
-            elif saveresults:
-                print("Yes")
+            if mask == None:
+                mask = -np.inf
+            mask_ = x>mask
+            bin_edges = x[mask_]
+            hi = y[mask_]
+            avg_sig = moving_average(hi, 5)
+            l = np.argmax(avg_sig)
+            o = signal.find_peaks(avg_sig[l:], threshold = 0)
+            try:
+                valley = x[l+np.argmin(avg_sig[:o[0][0]])]
+            except IndexError:
+                valley = None
+            if 'type' in kwargs:
+                if kwargs['type'] == 'input':
+                    while(True):
+                        try:
+                            SN = kwargs['SN']
+                            plt.semilogy(bin_edges[2:-2], avg_sig)
+                            plt.axvline(valley)
+                            gain, nphe, gain_err = hist_fitter(hi,bin_edges,h_int, plot = True, valley = valley, mask = None)
+                            print(f'resulting gain for SN {SN} and HV {key}: {gain} pm {gain_err}, with nphe: {nphe}')
+                        except:
+                            plt.semilogy(bin_edges[2:-2], avg_sig)
+                            plt.semilogy(x,y)
+                            plt.axvline(valley)
+                            plt.show(block = False)
+                            print(f'Fit did not work with valley = {valley}')
+                        try:
+                            valley = float(input('valley:\n'))
+                            plt.close()
+                        except ValueError:
+                            plt.close()
+                            break
+            else:
+                while(True):
+                    try:
+                        gain, nphe, gain_err = hist_fitter(y,x,h_int,plot = False, valley = valley)
+                        if nphe == None:
+                            raise ValueError
+                        break
+                    except:
+                        plt.close()
+                        plt.semilogy(x[2:-2], avg_sig)
+                        plt.axvline(valley)
+                        plt.show(block = False)
+                        valley = float(input('valley:\n'))
+                        gain, nphe, gain_err = hist_fitter(y, x, h_int,plot = True, mask = 0, valley = valley)
+
+            if saveresults:
                 add_fit_results(h5_filename = h5_filename, HV = key, gain = gain, nphe = nphe, gain_err = gain_err, int_ranges = int_ranges)
             gains.append(gain)
             nphes.append(nphe)
             gain_errs.append(gain_err)
-    p_opt, cov = curve_fit(linear, np.log10(hv), np.log10(gains), sigma = np.log10(gain_errs))
+    p_opt, cov = curve_fit(linear,np.log10(hv), np.log10(gains)-np.log10(3e6),   sigma = np.log10(gain_errs))
     nominal_hvs = []
     for nominal_gain in nominal_gains:
-        nominal_hvs.append(10**((np.log10(nominal_gain) - p_opt[1])/ p_opt[0]))
-    #print(nominal_hvs)
-    if plot:
-        fig, ax = plt.subplots(figsize = (10,5))
-        for i in range(len(nominal_hvs)):
-            ax.axhline(np.log10(nominal_gains[i]), color="black", ls="--")
-            ax.axvline(np.log10(nominal_hvs[i]), color="black", ls="--")
-        ax.plot(np.log10(hv), np.log10(gains), 'x')
-        hv_min=np.log10(min(hv)-50)
-        hv_max=np.log10(max(hv)+50)
-        xs = np.linspace(hv_min, hv_max, 1000)
-        gain_min=hv_min*p_opt[0] +p_opt[1]
-        gain_max=hv_max*p_opt[0] +p_opt[1]
-        if not nom_manuf_hv == None:
-            manuf_gain=10**(np.log10(nom_manuf_hv)*p_opt[0] +p_opt[1])
-            ax.vlines(x=np.log10(nom_manuf_hv), ymin=gain_min,ymax=np.log10(manuf_gain), colors="red", linestyles="dashed")
-        plt.title("gainslope "+SN)
-        ax.plot(xs, linear(xs, *p_opt))
-        plt.axis([hv_min, hv_max, gain_min, gain_max])
-        plt.xlabel("log10(HV)")
-        plt.ylabel("log10(gain)")
+        nominal_hvs.append(10**(p_opt[1]))
+    plt.close()
+    fig, ax = plt.subplots(figsize = (10,5))
+    for i in range(len(nominal_hvs)):
+        ax.axhline(np.log10(nominal_gains[i]), color="black", ls="--")
+        ax.axvline(np.log10(nominal_hvs[i]), color="black", ls="--")
+    #gains,gain_errs = np.array(gains), np.array(gain_errs)
+    #gain_err_plus = np.log10(gains+gain_errs)-np.log10(gains)
+    #gain_err_minus = np.log10(gains-gain_errs)-np.log10(gains)
+    ax.plot(np.log10(hv), np.log10(gains),'x')
+    hv_min=np.log10(min(hv)-50)
+    hv_max=np.log10(max(hv)+50)
+    xs = np.array([hv_min, hv_max])
+    gain_min=linear(hv_min, *p_opt)+np.log10(3e6)
+    gain_max=linear(hv_max, *p_opt)+np.log10(3e6)
+    #ax.vlines(x=np.log10(nom_manuf_hv), ymin=gain_min,ymax=np.log10(manuf_gain), colors="red", linestyles="dashed")
+    if kwargs['SN']==None:
+        kwargs['SN'] = ''
+    plt.title("gainslope "+ kwargs['SN'])
+
+    ax.plot(xs, linear(xs, *p_opt)+np.log10(3e6))
+    plt.axis([hv_min, hv_max, gain_min, gain_max])
+    plt.xlabel("log10(HV)")
+    plt.ylabel("log10(gain)")
+    fig.savefig(h5_filename[:-3] + 'gainslope.pdf')
+    if 'plot' in kwargs.values():
         plt.show()
-        fig.savefig(f'/media/pmttest/TOSHIBA EXT/Messdaten/KM3Net_{SN}/gainslope_{SN}.pdf')
-    err_nom_hv = err_hv(gain_nom = nominal_gain,gain = gains,gain_errs = gain_errs, hvs = hv)
-    if log:
-        name = f'/media/pmttest/TOSHIBA EXT/Messdaten/KM3Net_{SN}/log'
-        log_complete_data(name = name,hvs = hv,err_nom_hv = err_nom_hv, gains=gains, gain_errs = gain_errs, nphe = nphes,int_ranges = np.array(int_range),h_int = h_int, p_opt = p_opt, cov = cov,nominal_gain = nominal_gains, nominal_hv = nominal_hvs)
-    print(f'{SN}: nominal HV: {nominal_hvs} pm {err_nom_hv} for nominal gain: {nominal_gains}')
-    return gains, nphes, hv, gain_errs
+    err_nom_hv = 10**p_opt[1]*np.sqrt(cov[1,1])*np.log(10)
+    if reanalyse or saveresults:
+        log_complete_data(name = h5_filename,hvs = hv,err_nom_hv = err_nom_hv, gains=gains, gain_errs = gain_errs, nphe = nphes,int_ranges = np.array(int_range), h_int = h_int, p_opt = p_opt, cov = cov,nominal_gain = nominal_gains, nominal_hv = nominal_hvs)
+    delta_g = 3e6*p_opt[0]/(10**p_opt[1])*err_nom_hv
+
+    print(f'SN: {SN}, nominal HV: {nominal_hvs} pm {err_nom_hv} for nominal gain: {nominal_gains}, delta g: {delta_g:.2e}')
+    return gains, nphes, hv, gain_errs, nominal_hvs
 
 def err_hv(gain, gain_errs, gain_nom, hvs):
     p_opt, cov = curve_fit(linear,hvs, np.log10(gain)-np.log10(gain_nom), sigma = np.log10(gain_errs))
