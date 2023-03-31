@@ -34,8 +34,8 @@ class Osci(object):
 		'''Easy way to read'''
 		return self.visa_if.read(command)
 
-	def messung(self,Number_of_SEQuence = 500, Measurement_time = 2*10**-7,\
-		samplerate =  3.125*10**10, Max_Ampl = 1, vertical_delay = -180e-9,chanel = 'CH1'):
+	def messung(self, Number_of_SEQuence = 100, Measurement_time = 75e-9,\
+		samplerate = 6.25*10**12, Max_Ampl = 1, vertical_delay = -180e-9,chanels = ['CH1', 'CH2', 'CH3', 'CH4']):
 		'''Makes the nessesary configuration for measuring, and returns an 2D array of rawdata, and several parameters'''
 		self.write('HOR:MODE:SAMPLERate {}'.format(samplerate))#write the samplerate, problem is osci only uses specific values
 		time.sleep(.1)#sleep needed, otherwise sometimes one get the old samplerate
@@ -51,6 +51,10 @@ class Osci(object):
 		self.write('ACQ:STATE STOP')
 		self.write('HOR:FAST:STATE ON')#FastFrame , Osci uses this mode instead of Sequences
 		self.write('HORizontal:FASTframe:COUNt {}'.format(Number_of_SEQuence))
+		chanel = ''
+		for ch in chanels:
+			chanel += ch + ','
+		chanel = chanel[:-1]
 		self.write('DATa:SOURce {}'.format(chanel))
 		self.write('CLEAR')#Delete old points
 		self.write('ACQuire:STOPAfter SEQuence')
@@ -66,14 +70,19 @@ class Osci(object):
 		spinner.start()#start the loading symbold
 		self.write('CURVe?')#preperation to get the values
 		y_values = self.visa_if.read_raw()#get raw data
+		print(np.shape(np.frombuffer((y_values), dtype=np.int8)))
 		spinner.stop()#stop the loading symbol
 		print('Measurement duration: ',  time.time()-before)
 		time.sleep(1)
-		YOFF = float(self.query('WFMOutpre:YZEro?').strip())# get the offset
-		YMU = float(self.query('WFMO:YMU?').strip())# get the propotionality factor
-		y_values = np.reshape(np.frombuffer((y_values), dtype=np.int8),(Number_of_SEQuence,int(len(y_values)/Number_of_SEQuence)))#reshape and convert binary values to usable values
+		YMU = []
+		YOFF = []
+		for ch in chanels:
+			self.write('DATa:SOURce {}'.format(ch))
+			YMU.append(float(self.query('WFMO:YMU?').strip()))  # get the propotionality factor
+			YOFF.append(float(self.query('WFMOutpre:YZEro?').strip()))# get the offset
+		y_values = np.reshape(np.frombuffer((y_values), dtype=np.int8), (len(chanels), Number_of_SEQuence,  int(len(y_values)/Number_of_SEQuence/len(chanels))))#reshape and convert binary values to usable values
 		self.write('DISplay:WAVEform On')
-		return y_values[:,len(y_values[0,:])-points-1:len(y_values[0,:])-1], Measurement_time, YOFF, YMU, samplerate
+		return y_values[:,:,len(y_values[0,0,:])-points-1:len(y_values[0,0,:])-1], Measurement_time, YOFF, YMU, samplerate
 
 
 	#def __del__(self):#Does not work at the moment
