@@ -521,11 +521,27 @@ def moving_average(data, window):
     return ma
 
 
-def hist(waveforms, ped_min=0, ped_max=200, sig_min=250, sig_max=500, bins=200, histo_range=None, plot=True,
-         path=None, ):
+def hist(waveforms, ped_min=0, ped_max=200, sig_min=250, sig_max=500, bins=200, histo_range=None, plot=True, path=None):
+    """ 
+    Returns the histogram of the charges from the given waveforms after subtracting the pedestal.
+    
+    Args:
+    - waveforms (numpy.ndarray): Array of waveform data.
+    - ped_min (int): Lower bound of the pedestal range.
+    - ped_max (int): Upper bound of the pedestal range.
+    - sig_min (int): Lower bound of the signal range.
+    - sig_max (int): Upper bound of the signal range.
+    - bins (int): Number of bins for the histogram.
+    - histo_range (tuple): Tuple of range of the histogram.
+    - plot (bool): Boolean value to plot the histogram or not.
+    - path (str): Path of the file to save the plot.
+    
+    Returns:
+    - tuple: A tuple containing the histogram counts, bin edges, and integration range.
+    """
     int_ranges = (ped_min, ped_max, sig_min, sig_max)
     try:
-        if (plot):
+        if plot:
             mean_plot(waveforms, int_ranges)
             ped_min, ped_max, sig_min, sig_max = [int(i) for i in input(
                 'set integration ranges: <ped_min, ped_max, sig_min, sig_max>\n').split(', ')]
@@ -535,11 +551,29 @@ def hist(waveforms, ped_min=0, ped_max=200, sig_min=250, sig_max=500, bins=200, 
             ped_min, ped_max, sig_min, sig_max = [int(i) for i in int_ranges]
     except ValueError:
         print(f'ValueError: used integration ranges {int_ranges}')
-    return histogramm(waveforms, ped_min, ped_max, sig_min, sig_max, bins, histo_range)
 
 
 def histogramm(waveforms, ped_min=0, ped_max=200, sig_min=250, sig_max=500, bins=200, range=None, plot=False, name=None,
                title=None, block=True):
+    """
+    Returns the histogram of the charges from the given waveforms after subtracting the pedestal.
+    
+    Args:
+    - waveforms (numpy.ndarray): Array of waveform data.
+    - ped_min (int): Lower bound of the pedestal range.
+    - ped_max (int): Upper bound of the pedestal range.
+    - sig_min (int): Lower bound of the signal range.
+    - sig_max (int): Upper bound of the signal range.
+    - bins (int): Number of bins for the histogram.
+    - range (tuple): Tuple of range of the histogram.
+    - plot (bool): Boolean value to plot the histogram or not.
+    - name (str): Name of the file to save the plot.
+    - title (str): Title of the plot.
+    - block (bool): Boolean value to block the program or not.
+    
+    Returns:
+    - tuple: A tuple containing the histogram counts, bin edges, and integration range.
+    """
     ped_sig_ratio = (ped_max - ped_min) / (sig_max - sig_min)
     pedestals = (np.sum(waveforms[:, ped_min:ped_max], axis=1))
     charges = -(np.sum(waveforms[:, sig_min:sig_max], axis=1)) + pedestals / ped_sig_ratio
@@ -564,6 +598,25 @@ def histogramm(waveforms, ped_min=0, ped_max=200, sig_min=250, sig_max=500, bins
 
 
 def hist_fitter(hi, bin_edges, h_int, plot=True, print_level=0, valley=None, mask=None):  # input has to be from hist()
+     """
+    Fits a histogram of charge values to a PMT response function.
+
+    Args:
+        hi (ndarray): Array of histogram values.
+        bin_edges (ndarray): Array of histogram bin edges.
+        h_int (float): Total integration range.
+        plot (bool): Whether to display a plot of the fit.
+        print_level (int): Level of print statements to display during fitting.
+        valley (float): Minimum value for the location of the valley in the PMT response function.
+        mask (float): Minimum value for the histogram bin edges to include in the fit.
+
+    Returns:
+        tuple: Tuple containing the gain, number of photoelectrons, and gain error.
+
+    Raises:
+        TypeError: If the gain value is negative.
+
+    """
     fitter = ChargeHistFitter()
     if mask != None:
         hi = hi[bin_edges > mask]
@@ -601,6 +654,36 @@ def hist_fitter(hi, bin_edges, h_int, plot=True, print_level=0, valley=None, mas
 
 
 def analysis_complete_data(h5_filename, reanalyse=False, saveresults=False, nominal_gains=[3e6], mask=-0.1, **kwargs):
+    """
+    Analyzes the data in a HDF5 file containing waveforms recorded from a SiPM detector, and returns the SiPM gain and
+    other fit parameters for each HV setting. The function fits a histogram of the waveforms using a model function
+    based on the expected distribution of the photoelectron (PE) peaks. The function also calculates the linear fit of
+    the gain as a function of the HV setting, and returns the nominal HV values for a given nominal gain.
+
+    Parameters:
+    -----------
+    h5_filename: str
+        The name of the HDF5 file containing the waveforms to analyze.
+    reanalyse: bool, optional (default=False)
+        If True, forces the function to reanalyze all the waveforms, even if they have already been analyzed before.
+    saveresults: bool, optional (default=False)
+        If True, saves the fit results (SiPM gain, number of PEs, and their errors) in the same HDF5 file.
+    nominal_gains: list of float, optional (default=[3e6])
+        A list of the nominal gains (in V/PE) for which to calculate the nominal HV values.
+    mask: float, optional (default=-0.1)
+        The lower threshold for the waveform integral to exclude events with too low signal.
+    kwargs: dict, optional
+        Extra keyword arguments to customize the analysis:
+        - SN: str, optional
+            The serial number of the SiPM being analyzed.
+        - type: str, optional
+            The type of analysis to perform. If 'input', the function prompts the user to input the signal-to-noise
+            ratio (SNR) of the waveform, and plots the histogram and the fit result for that value of SNR.
+    
+    Returns:
+    --------
+    gains, nphes, hv, gain_errs, nominal_hvs
+    """    
     f = WavesetReader(h5_filename)
     hv = []
     gains = []
@@ -845,31 +928,50 @@ def HV_in_Hex(SN=None, HV=None):
 
 
 def get_tot(y_data, mes_time, threshold=0.150):
-    digital = y_data[1] - y_data[0]
-    digital += 0.150
-    rising_edge = np.argmax(digital > threshold, axis=1)
-    falling_edge = np.array([rising_edge[i] + np.argmax(digital[i, rising_edge[i]:] < threshold) for i in range(len(rising_edge))])
+    """Calculate the time-over-threshold (TOT) for a digital signal.
+
+    Parameters:
+    y_data (ndarray): Array of digital signal data.
+    mes_time (float): The measurement time for the signal.
+    threshold (float): The threshold level for the signal (default 0.150).
+
+    Returns:
+    tot (ndarray): Array of TOT values for each event in the signal.
+    """
+    digital = y_data[1] - y_data[0] + 0.15
+    mask = (digital > threshold)
+    rising_edge = np.nonzero(mask)[1]
+    falling_edge = rising_edge + np.argmax(digital[:, rising_edge:] < threshold, axis=1)
     tot = (falling_edge - rising_edge) * mes_time / np.shape(y_data)[2]
-    for i in range(len(tot)):
-        if rising_edge[i] == 0 or falling_edge[i] == rising_edge[i]:
-            tot[i] = 0
+    mask = (rising_edge != 0) & (falling_edge != rising_edge)
+    tot[mask] = (falling_edge[mask] - rising_edge[mask]) * mes_time / np.shape(y_data)[2]
     return tot
 
 
+
 def get_tot_ampl(y_data, Measurement_time, threshold = 0.15):
+        """
+    Computes the time-over-threshold (TOT) and the maximum analog signal amplitude for each event in the given waveform data.
+
+    Parameters:
+    y_data (ndarray): A 4 x n x m numpy array containing the recorded waveforms, where n is the number of channels and m is the number of samples.
+    Measurement_time (float): The duration of the measurement in seconds.
+    threshold (float, optional): The digital threshold used to detect the rising and falling edges of the signal. Default is 0.15.
+
+    Returns:
+    tuple: A tuple containing two arrays:
+        - tot (ndarray): An array of floats containing the TOT for each event, in units of seconds.
+        - ampl (ndarray): An array of floats containing the maximum analog signal amplitude for each event.
+    """
     analog = y_data[2] - y_data[3]
-    digital = y_data[1] - y_data[0]
-    digital += 0.150
+    digital = y_data[1] - y_data[0] + threshold
     rising_edge = np.argmax(digital > threshold, axis=1)
-    falling_edge = np.array([rising_edge[i] + np.argmax(digital[i, rising_edge[i]:] < threshold) for i in range(len(rising_edge))])
-    tot = (falling_edge - rising_edge) * Measurement_time / np.shape(y_data)[2]
-    ampl = []
-    for i in range(len(tot)):
-        if rising_edge[i] == 0 or falling_edge[i] == rising_edge[i] or tot[i] == 0:
-            tot[i] = 0
-            ampl.append(0)
-        else:
-            ampl.append(np.max(analog[i, rising_edge[i]:falling_edge[i]]))
+    falling_edge = np.array([np.argmax(digital[i, rising_edge[i]:] < threshold) for i in range(len(rising_edge))]) + rising_edge
+    tot = (falling_edge - rising_edge) * Measurement_time / y_data.shape[2]
+    ampl = [np.max(analog[i,rising_edge[i]:falling_edge[i]], axis=1) for i in range(len(tot))]
+    mask = (rising_edge == 0) | (falling_edge == rising_edge) | (tot == 0)
+    tot[mask] = 0
+    ampl[mask] = 0
     return tot, ampl
 
 def doppel_tail(y_data, time):
@@ -895,8 +997,24 @@ def log_vert(x, a, b, c):
 
 
 def tot_hist(y_data, Measurement_time, folder, SN):
-    if not os.path.isdir(f"{folder}/ToT_{SN}"):
-        os.mkdir(f"{folder}/ToT_{SN}")
+       """
+    Plot the time-over-threshold histogram for a given set of data.
+
+    Args:
+        y_data (np.ndarray): 4D array containing the digitized waveforms.
+        Measurement_time (float): Time in seconds of a single measurement.
+        folder (str): Path of the folder where the output will be saved.
+        SN (str): Sensor serial number.
+
+    Returns:
+        Tuple: a tuple containing:
+            - numpy.ndarray: the optimal parameters of the Gaussian fit to the ToT histogram.
+            - numpy.ndarray: the covariance matrix of the optimal parameters.
+            - numpy.ndarray: the ToT values in nanoseconds.
+            - float: the non-linearity of the sensor, defined as the fraction of events with ToT equal to 0.
+
+    """
+    os.makedirs(f"{folder}/ToT_{SN}", exist_ok=True)
     tot = get_tot(y_data, Measurement_time) * 1e9
     zerod = np.sum(tot == 0)
     print(f'NPHE: {1 - zerod / len(tot):.3f}')
@@ -947,41 +1065,59 @@ def tot_hist(y_data, Measurement_time, folder, SN):
 
 
 def corr_plot(y_data, Measurement_time, folder, SN):
-    if not os.path.isdir(f"{folder}/ToT_{SN}"):
-        os.mkdir(f"{folder}/ToT_{SN}")
+    """
+    Calculate ToT and amplitude from the input data.
+
+    Parameters:
+    y_data (ndarray): 2D array of ADC count values
+    Measurement_time (float): duration of the measurement in seconds
+
+    Returns:
+    tuple: ToT values (in nanoseconds), amplitude values (in volts)
+    """
+    os.makedirs(f"{folder}/ToT_{SN}", exist_ok=True)
+    
+    # Calculate ToT and amplitude
     tot, ampl = get_tot_ampl(y_data, Measurement_time)
-    tot = tot*1e9
+    tot = tot * 1e9
+    
+    # Create scatter plot
     fig, ax = plt.subplots()
     ax.plot(ampl, tot, 'x')
-    plt.xlabel("max amplitude in V")
-    plt.ylabel("tot time in ns")
-    plt.show()
+    ax.set_xlabel("max amplitude in V")
+    ax.set_ylabel("tot time in ns")
     fig.savefig(f"{folder}/ToT_{SN}/{SN}_corr_plot.pdf")
+    plt.show()
+    
+    # Create histogram and fit
     fig, ax = plt.subplots()
     H, xedges, yedges = np.histogram2d(ampl, tot, bins=[30, 30])
     X, Y = np.meshgrid(xedges, yedges)
     im = ax.pcolormesh(X, Y, H.T, cmap='Greys', norm=colors.LogNorm())
     fig.colorbar(im, ax=ax)
 
-    xedges = xedges[:-1] + xedges[1]/2
+    x = xedges[:-1] + xedges[1] / 2
     y = np.array([yedges[np.argmax(H[i])] for i in range(len(H))]) + yedges[1] / 2
-    #y = y[0 < np.argmax(H, axis=1)]
-    plt.plot(xedges, y, 'x')
     mask = yedges[1] < y
-    y = y[mask]
-    # noinspection PyTupleAssignmentBalance
-    p_opt, cov = opt.curve_fit(log_vert, xedges[mask][:-4], y[:-4], p0=[11,20,-1], maxfev=10000)
-    plt.plot(xedges, log_vert(xedges, *p_opt))
-    plt.plot(xedges[mask], y)
-    bor = np.nan_to_num(log_vert(xedges, *p_opt))
-
+    x, y = x[mask], y[mask]
+    
+    # Fit logarithmic curve
+    p_opt, cov = opt.curve_fit(log_vert, x[:-4], y[:-4], p0=[11, 20, -1], maxfev=10000)
+    plt.plot(x, log_vert(x, *p_opt))
+    plt.plot(x, y, 'x')
+    
+    # Plot partial delayed pulsed (PDP) and calculate percentage
+    bor = np.nan_to_num(log_vert(x, *p_opt))
     pdp = [np.sum(H[:np.max([int(bor[i]-1), 0]), i], axis=0) for i in range(len(bor))]
+    plt.plot(x, bor)
     plt.xlabel("max amplitude in V")
     plt.ylabel("tot time in ns")
     plt.ylim(0)
     plt.show()
     fig.savefig(f"{folder}/ToT_{SN}/{SN}_corr_plot_hist.pdf")
+    
     print(f'Percentage of partly delayed pulsed: {np.sum(pdp) * 100 / np.sum(H):.3f}%')
+    
     return p_opt, cov
 
 
