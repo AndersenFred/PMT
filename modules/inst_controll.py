@@ -94,9 +94,9 @@ class Osci(object):
 		#print('Close')
 
 class Funk_Gen(object):#no more used
-    def __init__(self):
-        self.rm = visa.ResourceManager('@py')
-        self.DG = self.rm.open_resource('USB0::6833::1602::DG1ZA220900524::0::INSTR')
+    def __init__(self, ip:str = '10.202.33.99'):
+        self.rm = visa.ResourceManager()
+        self.DG = self.rm.open_resource("TCPIP0::{}::INSTR".format(ip))
 
     def query(self, command):
         '''Easy way to query'''
@@ -110,13 +110,35 @@ class Funk_Gen(object):#no more used
         '''Easy way to read'''
         return self.DG.read(command)
 
-    def sinus(self,freq = 2*10**3, ampl = 20*10**-3, off=0.5):
-        self.write('APPLy:SINusoid {0},{1},{2}'.format(freq,ampl,off))
+    def on(self, channel = 1):
+        if channel == 1:
+	        self.write('OUTP ON')
+        elif channel == 2:
+	        self.write('OUTP:CH2 ON')
 
-    def pulse(self,freq = 2*10**3, ampl = 20*10**-3, off=0.0095, width = 'MINimum'):
-        self.write('APPLy:PULSe {0},{1},{2}'.format(freq,ampl,off))
-        self.write('PULSe:WIDTh {}'.format(width))
+    def off(self, channel = 1):
+        if channel == 1:
+	        self.write('OUTP OFF')
+        elif channel == 2:
+	        self.write('OUTP:CH2 OFF')
 
+    def sinus(self,freq = 2e3, ampl = 2e-3, off=0.5, channel = 1):
+        if(channel == 1):
+            self.write('APPLy:SINusoid {0},{1},{2}'.format(freq,ampl,off))
+        elif channel == 2:
+        	self.write('APPLy:SINusoid:CH2 {0},{1},{2}'.format(freq,ampl,off))
+        else:
+        	raise ArributeError('chanel has to be either 1 or 2')
+
+    def pulse(self,freq = 2e4, ampl = 20e-3, off=0.0095, width = 'MINimum', channel = 1):
+        if(channel == 1):
+        	self.write('APPLy:PULSe {0},{1},{2}'.format(freq,ampl,off))
+        	self.write('PULSe:WIDTh {}'.format(width))
+        elif(channel == 2):
+        	self.write('APPLy:PULSe:CH2 {0},{1},{2}'.format(freq,ampl,off))
+        	self.write('PULSe:WIDTh:CH2 {}'.format(width))
+        else:
+        	raise ArributeError('chanel has to be either 1 or 2')
     #def __del__(self):
         #pass
 
